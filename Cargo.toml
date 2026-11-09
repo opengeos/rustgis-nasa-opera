@@ -1,7 +1,7 @@
 [package]
 # The crate's name doesn't matter to RustGIS (the plugin's id is in plugin.json), but
 # scripts/setup.py sets it to the plugin's id.
-name = "my-plugin"
+name = "nasa-opera"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
@@ -15,6 +15,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rustgis-plugin = { git = "https://github.com/opengeos/rustgis-plugins" }
+# CMR's answers are read into typed structs that skip what the plugin doesn't use: far less work
+# for the sandbox's interpreter than building a JSON value of every granule's whole metadata.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Small, fast plugin modules. A panic aborts: RustGIS reports it as the plugin failing.
 [profile.release]

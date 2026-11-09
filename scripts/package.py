@@ -62,20 +62,39 @@ def registry_checks():
     return module
 
 
-def package(manifest: bytes, wasm: bytes, entry: str) -> bytes:
-    """A reproducible .rgplugin: plugin.json and the module at the root of a zip archive.
+def skill_files(manifest: dict) -> list[tuple[str, bytes]]:
+    """The files of the skills plugin.json lists: skills/<name>/SKILL.md for each.
+
+    Args:
+        manifest: plugin.json, parsed.
+
+    Returns:
+        (path in the package, bytes) for each skill file, in order.
+    """
+    files = []
+    for name in manifest.get("skills", []):
+        path = ROOT / "skills" / name / "SKILL.md"
+        if not path.is_file():
+            raise SystemExit(f"error: plugin.json lists the skill {name!r}, but {path} is missing")
+        files.append((f"skills/{name}/SKILL.md", path.read_bytes()))
+    return files
+
+
+def package(manifest: bytes, wasm: bytes, entry: str, extra: list[tuple[str, bytes]] = ()) -> bytes:
+    """A reproducible .rgplugin: plugin.json, the module and the skills in a zip archive.
 
     Args:
         manifest: plugin.json's bytes.
         wasm: The module's bytes.
         entry: The module's file name in the package (plugin.json's `entry`).
+        extra: More files, as (path in the package, bytes): the skills.
 
     Returns:
         The package's bytes.
     """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for name, data in (("plugin.json", manifest), (entry, wasm)):
+        for name, data in (("plugin.json", manifest), (entry, wasm), *extra):
             info = zipfile.ZipInfo(name, ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
@@ -114,7 +133,8 @@ def main() -> int:
         return 1
     wasm = module.read_bytes()
     entry = manifest.get("entry", "plugin.wasm")
-    data = package(manifest_bytes, wasm, entry)
+    skills = skill_files(manifest)
+    data = package(manifest_bytes, wasm, entry, skills)
 
     checks = None if args.offline else registry_checks()
     if checks:
@@ -139,6 +159,9 @@ def main() -> int:
     folder.mkdir()
     (folder / "plugin.json").write_bytes(manifest_bytes)
     (folder / entry).write_bytes(wasm)
+    for path, content in skills:
+        (folder / path).parent.mkdir(parents=True, exist_ok=True)
+        (folder / path).write_bytes(content)
     name = f"{plugin_id}-{version}.rgplugin"
     (DIST / name).write_bytes(data)
     sha = hashlib.sha256(data).hexdigest()
@@ -147,7 +170,7 @@ def main() -> int:
     if not repo and re.match(r"^https://github\.com/[^/]+/[^/]+$", manifest.get("homepage", "")):
         repo = manifest["homepage"].removeprefix("https://github.com/")
     url = args.url or (f"https://github.com/{repo}/releases/download/v{version}/{name}" if repo else f"https://<where you publish it>/{name}")
-    registry_entry = {"id": plugin_id, "source": {"url": url, "sha256": sha}, "categories": ["Utilities"]}
+    registry_entry = {"id": plugin_id, "source": {"url": url, "sha256": sha}, "categories": ["Imagery", "Hydrology", "Data"]}
     (DIST / f"{plugin_id}.json").write_text(json.dumps(registry_entry, indent=2) + "\n", encoding="utf-8")
 
     print(f"dist/{name}  {len(data):,} bytes  sha256 {sha}")

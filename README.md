@@ -1,201 +1,146 @@
-# RustGIS Plugin Template
+# NASA OPERA for RustGIS
 
-A template for [RustGIS](https://github.com/opengeos/RustGIS) plugins written in Rust. A plugin
-is a WebAssembly module with a `plugin.json` manifest, packaged as a `.rgplugin` file. It runs
-sandboxed in the desktop app, in `rustgis-cli` and in the [web app](https://web.rustgis.app).
+A [RustGIS](https://github.com/opengeos/RustGIS) plugin to search and visualize
+[NASA OPERA](https://www.jpl.nasa.gov/go/opera) products (surface water, land disturbance, SAR
+backscatter and more) on the map. It is the RustGIS counterpart of the
+[GeoLibre NASA OPERA plugin](https://github.com/opengeos/geolibre-nasa-opera) and the
+[QGIS NASA OPERA plugin](https://github.com/opengeos/qgis-nasa-opera-plugin).
 
-Click **Use this template** on GitHub (or fork this repository), pick a starter, and the
-workflows here build, test and release your plugin, ready to submit to the
-[plugin registry](https://plugins.rustgis.app).
+It is a sandboxed WebAssembly plugin, so it runs in the desktop app, in `rustgis-cli` and in the
+[web app](https://web.rustgis.app). It needs **no Earthdata login**: granule search uses NASA's
+public [CMR](https://cmr.earthdata.nasa.gov/search) API, and rasters are drawn by
+[titiler-cmr](https://github.com/developmentseed/titiler-cmr), which reads the Cloud-Optimized
+GeoTIFFs with Earthdata credentials of its own.
 
-For a plugin in Python, use
-[rustgis-python-plugin-template](https://github.com/opengeos/rustgis-python-plugin-template).
+![The NASA OPERA panel in RustGIS: DSWx-HLS surface water over Tulare Lake, April 2023](docs/desktop.webp)
 
-## Starters
+## What it does
 
-Each starter in [`starters/`](starters) is a complete plugin that shows one way a plugin
-appears in RustGIS:
+- Pick a **product**, the **months** to search (or *Latest*) and how many granules, then
+  **Search**. It searches the map view, or the selected features' area when *Search the selected
+  features' area* is ticked.
+- The granules' **footprints** go on the map as the layer `OPERA footprints` (hollow orange
+  outlines), and the **Granules** tree lists them by date, newest first, with a search box.
+- Choose a **date** to take all its granules (a mosaic of the tiles acquired that day) or a single
+  granule. Its footprints are selected on the map and the **Layer** tree lists its bands.
+  Selecting footprints on the map works too: **Display** shows the selected ones.
+- **Display** adds each granule as a tile layer (`OPERA DSWx-HLS B01_WTR 2023-04-30 T11SKA`),
+  newest on top, at most 25 at a time. **Display All** shows every granule found.
+- Categorical layers get their classes' colours: DSWx water classes (with *water classes only*
+  to hide cloud, snow and ocean) and DIST disturbance status. Continuous layers get a stretch and
+  a colormap (SAR backscatter in grey, DEM in `terrain`, confidence and incidence angles in
+  `viridis`); scripts can set `rescale` and `colormap` themselves. **Opacity** applies to the
+  layers being added.
+- **Zoom to Results** and **Clear** (removes the footprints and every OPERA layer).
+- The plugin carries an AI Assistant skill, `nasa-opera:opera-flood-map`, that teaches the
+  assistant to map floods, water and disturbance with these commands.
 
-| Starter | Where it appears | What it shows |
+### Products
+
+| Product | Short name | Shown as |
 |---|---|---|
-| [`commands`](starters/commands) (the default) | buttons in a group named after the plugin on the **Plugins** tab | reading the map, running RustGIS commands, adding a layer, translated messages |
-| [`tab`](starters/tab) | a ribbon tab of its own, with groups, a dropdown menu and a tool button | `tab` in `plugin.json`, moving the map, a tool opened from the ribbon |
-| [`panel`](starters/panel) | a pane beside the map, opened from the **Plugins** tab | `panel` in `plugin.json`: a slider, a checkbox, texts and buttons bound to commands, and the state the plugin answers |
-| [`tools`](starters/tools) | geoprocessing tools in the **Tools** pane, under **Plugins ›** | tool parameters (layer, field, choice, number, text), a new layer, a selection |
+| DSWx-HLS: surface water, optical | `OPERA_L3_DSWX-HLS_V1` | `B01_WTR` water classes, and 9 more bands |
+| DSWx-S1: surface water, radar | `OPERA_L3_DSWX-S1_V1` | `B01_WTR` water classes |
+| DIST-ALERT: disturbance alerts | `OPERA_L3_DIST-ALERT-HLS_V1` | `VEG-DIST-STATUS` classes |
+| DIST-ANN: annual disturbance | `OPERA_L3_DIST-ANN-HLS_V1` | `VEG-DIST-STATUS` classes |
+| RTC-S1: SAR backscatter | `OPERA_L2_RTC-S1_V1` | `VV`/`VH` in grey |
+| RTC-S1 static layers | `OPERA_L2_RTC-S1-STATIC_V1` | `local_incidence_angle` and more |
+| CSLC-S1, CSLC-S1 static, DISP-S1 | `OPERA_L2_CSLC-S1_V1`, `OPERA_L2_CSLC-S1-STATIC_V1`, `OPERA_L3_DISP-S1_V1` | footprints only (HDF5 and NetCDF, which titiler-cmr's raster reader doesn't take) |
 
-The sections are independent: one plugin can have commands, tools, a tab and a panel. Start
-from one starter and copy what you need from the others.
+![DSWx-S1, DIST-ALERT, RTC-S1 and RTC-S1 static layers over Los Angeles](docs/products.webp)
 
-Panels need a RustGIS newer than 0.3.0. Older versions ignore `panel`, and the panel starter's
-commands still appear on the Plugins tab.
+## Install
 
-## Quick start
-
-You need [Rust](https://rustup.rs) and Python 3.11 or later.
+Download `nasa-opera-<version>.rgplugin` from the
+[latest release](https://github.com/opengeos/rustgis-nasa-opera/releases/latest) and install it
+with **Plugins › Install From File** (or drop it on the RustGIS window), or on the command line:
 
 ```sh
-rustup target add wasm32-unknown-unknown
-
-# Pick a starter (commands, tab, panel or tools) and name your plugin.
-python scripts/setup.py --starter tab --id my-plugin --name "My Plugin" --author "Your Name"
-
-# Build, check and package it.
-python scripts/package.py
+rustgis-cli plugins install nasa-opera-0.1.0.rgplugin
 ```
 
-`setup.py` copies the starter to `plugin.json` and `src/lib.rs`. It also sets the plugin's id,
-name, author and homepage, and names the crate after the id. It takes the homepage, and by
-default the id and author, from your repository's GitHub address. Run it again to switch
-starters, but note that it overwrites `plugin.json` and `src/lib.rs`. Once you've picked one,
-you can delete `starters/` and `scripts/setup.py`.
+It needs RustGIS 0.6.0 or later. The install prompt lists its permissions: **edit** (it adds the
+footprints and tile layers) and **network** (it reads `cmr.earthdata.nasa.gov` and adds tiles from
+`titiler-cmr.opengeos.org`; it contacts no other host).
 
-`package.py` writes:
+## Use it from scripts and the command line
 
-| File | What |
+Every command takes its settings as parameters too, so scripts, the AI Assistant and
+`rustgis-cli` can use it without the panel:
+
+```sh
+rustgis-cli run --plugin nasa-opera-0.1.0.rgplugin \
+  --cmd 'plugin:nasa-opera/search={"product": "OPERA_L3_DSWX-HLS_V1", "bbox": [-119.95, 35.85, -119.45, 36.25], "start": "2023-04-01", "end": "2023-04-30", "limit": 50}' \
+  --cmd 'plugin:nasa-opera/display={"date": "2023-04-30", "band": "B01_WTR", "waterOnly": true}' \
+  --cmd 'map.zoomToExtent={"extent": [-120.2, 35.75, -119.2, 36.35]}' \
+  --cmd 'share.exportMap={"path": "tulare.png"}'
+```
+
+| Command | Parameters |
 |---|---|
-| `dist/<id>/` | `plugin.json` and `plugin.wasm`, a plugin folder to load while you work |
-| `dist/<id>-<version>.rgplugin` | the package |
-| `dist/<id>.json` | the entry to submit to the registry |
+| `search` | `product`, `bbox` `[w, s, e, n]` (default: the map view), `start` and `end` `"YYYY-MM-DD"`, or `latest: true` (default: the panel's months, or the latest when it says *Latest*), `limit` 1–100 |
+| `choose-granule` | `granule` (a granule UR) or `date` |
+| `display` | `granule` or `date` (default: the selected footprints, else the panel's choice), `band`, `rescale` `"min,max"`, `colormap` (a titiler colormap name), `waterOnly`, `opacity` 0–100 |
+| `display-all` | `band`, `rescale`, `colormap`, `waterOnly`, `opacity` |
+| `zoom-results`, `clear`, `panel-state` | none |
 
-It checks the package as the registry will, using the registry's own
-[`build.py`](https://github.com/opengeos/rustgis-plugins/blob/main/scripts/build.py). Pass
-`--offline` to skip that check.
+`search` answers `granules`, `hits` and `dates` (newest first); `display` answers the `layers` it
+added.
+
+## How it works
+
+```
+Search  ──> host.fetch  https://cmr.earthdata.nasa.gov/search/granules.umm_json   (public)
+             ?short_name=…&bounding_box=…&temporal=…&sort_key=-start_date&page_size=25&page_num=…
+        ──> footprints layer, whose attributes hold each granule's UR, date, tile, collection and bands
+
+Display ──> map.addTiles  https://titiler-cmr.opengeos.org/rasterio/tiles/WebMercatorQuad/{z}/{x}/{y}.png
+             ?collection_concept_id=…&granule_ur=…&assets=<band>&assets_regex=<band>&colormap=…
+```
+
+A plugin keeps nothing between calls, so the footprints layer is its memory: Display reads the
+granules back from it. CMR answers are fetched 25 granules a page (each page stays under
+`host.fetch`'s 2 MB), all pages at once so the web app downloads them together, and read into
+typed structs that skip what the plugin doesn't use, so a 100-granule search fits a command's
+fuel budget. Reprocessed granules that CMR lists beside the ones they replace are left out.
 
 ## Develop
 
-- **Try it in RustGIS:** open **Plugins › Plugin Manager › Settings › Add Plugin Folder…** and
-  pick `dist/<id>`. RustGIS remembers the folder and loads it at each start. After
-  `python scripts/package.py`, add the folder again (or restart RustGIS) to load the new
-  build.
-- **Try it on the command line:**
+You need [Rust](https://rustup.rs) with `rustup target add wasm32-unknown-unknown`, and
+Python 3.11 or later.
 
-  ```sh
-  rustgis-cli run --plugin dist/my-plugin --sample --cmd 'plugin:my-plugin/layer-report'
-  rustgis-cli run --plugin dist/my-plugin --sample \
-    --cmd 'gp.run={"tool": "plugin:my-plugin/centroids", "params": {"input": "Countries"}}' \
-    --cmd 'share.exportMap={"path": "map.png"}'
-  ```
-
-- **Run it as CI does:** `python scripts/smoke.py` loads the package in `rustgis-cli`, on the
-  World Atlas sample. It runs every tool with its defaults and every command that needs no
-  parameters. `--strict` also fails when a command fails.
-- **Unit tests:** `cargo test` runs the tests in `src/lib.rs` on your own computer. Keep
-  `host::` calls out of the functions you test, since they only work inside RustGIS.
-- **Lint:** `cargo fmt` and `cargo clippy --target wasm32-unknown-unknown`, or
-  `pre-commit run --all-files`.
-
-The plugin is a function that answers requests. RustGIS calls it when someone runs one of the
-plugin's commands or tools. It reads and changes the map through the `rustgis-plugin` SDK's
-`host` module, and returns JSON:
-
-```rust
-use rustgis_plugin::{Request, Value, host, json};
-
-fn handle(req: Request) -> Result<Value, String> {
-    match req.id.as_str() {
-        "layer-report" => {
-            let n = host::layers()?.as_array().map_or(0, Vec::len);
-            host::notify(&format!("{n} layers"));
-            Ok(json!({"layers": n}))
-        }
-        other => Err(format!("unknown command '{other}'")),
-    }
-}
-
-rustgis_plugin::export!(handle);
+```sh
+cargo test                       # unit tests (src/opera.rs: CMR parsing, dates, tile addresses)
+python scripts/package.py        # builds dist/nasa-opera-<version>.rgplugin and checks it as the registry does
+python scripts/smoke.py          # loads it in rustgis-cli on the World Atlas sample
+pre-commit run --all-files       # cargo fmt and clippy
 ```
 
-See [Write a plugin](https://plugins.rustgis.app/develop/) for `plugin.json`, the permissions
-(`edit`, `files`, `network`), file parameters, data from the web, translations, tabs and panels.
-RustGIS's [plugin documentation](https://github.com/opengeos/RustGIS/blob/main/docs/plugins.md)
-covers everything a plugin can ask for. `rustgis-cli commands` lists every RustGIS command a
-plugin can run, with its parameters.
-
-## Release
-
-1. Bump `version` in `plugin.json` and in `Cargo.toml`. Packages never change once published,
-   so every release needs a new version.
-2. Commit, then push a tag that matches the version:
-
-   ```sh
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-
-The [Release](.github/workflows/release.yml) workflow builds and checks the plugin, and runs it
-in the latest RustGIS. It then publishes a GitHub release with two files:
-
-- `<id>-<version>.rgplugin`, the package.
-- `<id>.json`, the registry entry, with the package's address and SHA-256.
-
-The release notes repeat the entry. Anyone can install the package from the release, through
-**Plugin Manager › Settings › Install From File…** or with
-`rustgis-cli plugins install <file>`.
-
-A tag that doesn't match `plugin.json`'s version fails the workflow. CI tests against the latest
-RustGIS release; set the `RUSTGIS_VERSION` repository variable (to `v0.3.0`, say) to test
-against another one.
-
-## Submit to the plugin registry
-
-The [registry](https://plugins.rustgis.app) is curated: a maintainer reviews each plugin before
-it is listed. To submit yours, open a pull request on
-[opengeos/rustgis-plugins](https://github.com/opengeos/rustgis-plugins) that adds
-`registry/<id>.json`:
-
-1. Take `<id>.json` from your release (or `dist/<id>.json`). Set its `categories` to one to four
-   of: Analysis, Basemaps, Cartography, Data, Editing, Example, Hydrology, Imagery, Raster,
-   Sampling, Terrain, Utilities, Vector, Visualization.
-
-   ```json
-   {
-     "id": "my-plugin",
-     "source": {
-       "url": "https://github.com/you/my-plugin/releases/download/v0.1.0/my-plugin-0.1.0.rgplugin",
-       "sha256": "..."
-     },
-     "categories": ["Vector"]
-   }
-   ```
-
-2. Add it as `registry/<id>.json` and open the pull request, on the web or with `gh`:
-
-   ```sh
-   gh repo fork opengeos/rustgis-plugins --clone && cd rustgis-plugins
-   git switch -c add-my-plugin
-   cp ../my-plugin/dist/my-plugin.json registry/   # then edit its categories
-   git add registry/my-plugin.json && git commit -m "Add My Plugin to the registry"
-   git push -u origin add-my-plugin && gh pr create --fill
-   ```
-
-The registry's CI downloads the package, checks its SHA-256, validates it and runs it in
-RustGIS. The pull request also gets a preview link that opens RustGIS's web app with your plugin
-ready to install. The listing's name, description, version and permissions come from your
-`plugin.json`. Once the PR is merged, the package is served from `packages.rustgis.app`, and
-RustGIS users can install it from **Plugins › Plugin Manager › Browse**.
-
-**Updating:** release a new version, then open a pull request that updates `source` in
-`registry/<id>.json` to the new release's `url` and `sha256`. RustGIS shows an **Update**
-button to everyone with an older version.
-
-See [Publish a plugin](https://plugins.rustgis.app/registry/) for what the review looks at.
-
-## Layout
+To try a build in the desktop app, add `dist/nasa-opera` with
+**Plugins › Plugin Manager › Settings › Add Plugin Folder…**.
 
 | Path | What |
 |---|---|
-| `plugin.json` | the manifest: id, version, permissions, commands, tools, tab, panel, translations |
-| `src/lib.rs` | the plugin |
-| `Cargo.toml` | the crate; `Cargo.lock` pins the SDK's version |
-| `starters/` | the four starters |
-| `scripts/setup.py` | picks a starter and names the plugin |
-| `scripts/package.py` | builds, checks and packages the plugin into `dist/` |
+| `plugin.json` | the manifest: commands, panel, permissions, skill |
+| `src/lib.rs` | the commands and the panel |
+| `src/opera.rs` | products, CMR results, dates, styles and titiler-cmr addresses (no host calls, unit tested) |
+| `skills/opera-flood-map/SKILL.md` | the AI Assistant skill packaged with the plugin |
+| `scripts/package.py` | builds, checks and packages the plugin (with its skills) into `dist/` |
 | `scripts/smoke.py` | runs the package in `rustgis-cli` |
-| `.github/workflows/ci.yml` | builds, tests and runs the plugin on each push and pull request |
-| `.github/workflows/release.yml` | publishes a release when you push a `v*` tag |
 
-`cargo update -p rustgis-plugin` updates the SDK.
+## Release
+
+Bump `version` in `plugin.json` and `Cargo.toml`, then push a matching tag (`v0.1.0`). The
+[Release](.github/workflows/release.yml) workflow builds, checks and runs the plugin, then
+publishes the `.rgplugin` and its registry entry `nasa-opera.json`.
+
+## Credits
+
+OPERA products are produced by NASA JPL's
+[Observational Products for End-Users from Remote Sensing Analysis](https://www.jpl.nasa.gov/go/opera)
+project and distributed by NASA's PO.DAAC, LP DAAC and ASF DAAC. Tiles are rendered by
+[titiler-cmr](https://github.com/developmentseed/titiler-cmr) from Development Seed.
 
 ## License
 
-MIT for the template. Your plugin states its own license in `plugin.json`.
+MIT
