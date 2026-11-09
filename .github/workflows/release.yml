@@ -32,7 +32,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Build, check and package
-        run: python scripts/package.py --tag "$GITHUB_REF_NAME"
+        id: package
+        run: |
+          python scripts/package.py --tag "$GITHUB_REF_NAME"
+          # What gets published must be what was built, whatever the smoke test's RustGIS does.
+          echo "sums=$(sha256sum dist/*.rgplugin dist/*.json | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       # The latest release (or RUSTGIS_VERSION), unless the plugin needs a newer RustGIS than
       # that: then rustgis-cli is built from RustGIS's main branch (or RUSTGIS_REF), where the
       # features a new minRustgisVersion waits for land before they are released.
@@ -95,7 +99,9 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          SUMS: ${{ steps.package.outputs.sums }}
         run: |
+          test "$(sha256sum dist/*.rgplugin dist/*.json | sha256sum | cut -d' ' -f1)" = "$SUMS" || { echo "::error::The package changed after it was built."; exit 1; }
           id=$(python -c 'import json; print(json.load(open("plugin.json"))["id"])')
           version="${GITHUB_REF_NAME#v}"
           package="dist/$id-$version.rgplugin"
