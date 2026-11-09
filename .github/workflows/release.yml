@@ -46,7 +46,9 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "main=$newer" >> "$GITHUB_OUTPUT"
           ref="${RUSTGIS_REF:-main}"
-          echo "sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)" >> "$GITHUB_OUTPUT"
+          sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)
+          test -n "$sha" || { echo "::error::No branch '$ref' in opengeos/RustGIS (check RUSTGIS_REF)."; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [ "$newer" = true ]; then
             echo "::notice::Running the plugin (minRustgisVersion $need) in rustgis-cli built from RustGIS $ref, not $tag."
           fi
@@ -59,14 +61,9 @@ jobs:
           gh release download "$TAG" --repo opengeos/RustGIS --pattern 'RustGIS-*-linux-x86_64.tar.gz' --dir "$RUNNER_TEMP"
           tar xzf "$RUNNER_TEMP"/RustGIS-*-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
           echo "RUSTGIS_CLI=$(ls "$RUNNER_TEMP"/RustGIS-*-linux-x86_64/rustgis-cli)" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
-        if: steps.pick.outputs.main == 'true'
-        id: cli-cache
-        with:
-          path: ~/rustgis-cli
-          key: rustgis-cli-${{ runner.os }}-${{ steps.pick.outputs.sha }}
       - name: Build rustgis-cli from RustGIS main (or RUSTGIS_REF)
-        if: steps.pick.outputs.main == 'true' && steps.cli-cache.outputs.cache-hit != 'true'
+        # Built here, not taken from CI's cache: this job can write releases.
+        if: steps.pick.outputs.main == 'true'
         env:
           SHA: ${{ steps.pick.outputs.sha }}
         run: |

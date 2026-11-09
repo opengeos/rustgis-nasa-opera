@@ -70,7 +70,9 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "main=$newer" >> "$GITHUB_OUTPUT"
           ref="${RUSTGIS_REF:-main}"
-          echo "sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)" >> "$GITHUB_OUTPUT"
+          sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)
+          test -n "$sha" || { echo "::error::No branch '$ref' in opengeos/RustGIS (check RUSTGIS_REF)."; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [ "$newer" = true ]; then
             echo "::notice::Running the plugin (minRustgisVersion $need) in rustgis-cli built from RustGIS $ref, not $tag."
           fi
