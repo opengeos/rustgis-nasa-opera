@@ -181,32 +181,42 @@ fn search_dates(req: &Request) -> Result<Option<(String, String)>, String> {
 }
 
 /// Keeps the panel's two dates and its month range in step: moving the range sets the dates to
-/// its first and last days; picking a date moves the range to the dates' months.
+/// its first and last days; picking a date moves the range to the dates' months. The range spans
+/// 2014-01 to 2030-12, so a date outside it keeps its value while the range's handle waits at
+/// that end.
 fn sync_dates(req: &Request) -> Result<Value, String> {
-    let mut panel = Panel::new();
-    let mut text = None;
-    if req.changed("months") {
-        let (lo, hi) = req.panel_range("months").unwrap_or((0, opera::MONTHS - 1));
-        let (s, e) = opera::range_window(lo, hi);
-        text = Some(format!("Search from {s} to {e}."));
-        panel = panel.value("start", s).value("end", e);
-    } else if let (Some(s), Some(e)) = (req.panel_str("start"), req.panel_str("end")) {
-        let (s, e) = (opera::parse_date(s)?, opera::parse_date(e)?);
-        if s > e {
-            panel = panel.text("status", "The start date comes after the end date.");
-        } else {
-            let (lo, hi) = (opera::month_index(s), opera::month_index(e));
-            panel = panel
-                .value("months", json!([lo, hi]))
-                .text("status", format!("Search from {} to {}.", opera::fmt_date(s), opera::fmt_date(e)));
+    let (status, panel) = sync_panel(req.changed("months"), req.panel_range("months"), req.panel_str("start"), req.panel_str("end"))?;
+    Ok(panel.text("status", status).answer(json!({})))
+}
+
+/// What `sync-dates` answers: the status, and the dates or the range it sets.
+fn sync_panel(range_moved: bool, range: Option<(i64, i64)>, start: Option<&str>, end: Option<&str>) -> Result<(String, Panel), String> {
+    let panel = Panel::new();
+    if range_moved {
+        return Ok(match range {
+            Some((lo, hi)) => {
+                let (s, e) = opera::range_window(lo, hi);
+                (format!("Search from {s} to {e}."), panel.value("start", s).value("end", e))
+            }
+            // A range the request didn't give: no window rather than a guessed one.
+            None => {
+                ("No dates: Search finds the latest granules.".to_string(), panel.value("start", Value::Null).value("end", Value::Null))
+            }
+        });
+    }
+    Ok(match (start, end) {
+        (Some(s), Some(e)) => {
+            let (s, e) = (opera::parse_date(s)?, opera::parse_date(e)?);
+            if s > e {
+                ("The start date comes after the end date.".to_string(), panel)
+            } else {
+                let (lo, hi) = (opera::month_index(s), opera::month_index(e));
+                (format!("Search from {} to {}.", opera::fmt_date(s), opera::fmt_date(e)), panel.value("months", json!([lo, hi])))
+            }
         }
-    } else if req.panel_str("start").is_none() && req.panel_str("end").is_none() {
-        text = Some("No dates: Search finds the latest granules.".to_string());
-    }
-    if let Some(t) = text {
-        panel = panel.text("status", t);
-    }
-    Ok(panel.answer(json!({})))
+        (None, None) => ("No dates: Search finds the latest granules.".to_string(), panel),
+        _ => ("Pick both a start and an end date, or clear both for the latest granules.".to_string(), panel),
+    })
 }
 
 fn search(req: &Request) -> Result<Value, String> {
@@ -634,6 +644,24 @@ mod tests {
         let rs = [rec("a", "2023-04-30", "B01_WTR"), rec("b", "2023-04-30", "B01_WTR"), rec("c", "2023-04-14", "B01_WTR")];
         let ids: Vec<String> = granule_options(&rs).into_iter().map(|n| n.id).collect();
         assert_eq!(ids, ["date:2023-04-30", "a", "b", "date:2023-04-14", "c"]);
+    }
+
+    #[test]
+    fn sync_keeps_the_dates_and_the_range_in_step() {
+        let answer = |r: (String, Panel)| (r.0, Value::from(r.1)["values"].clone());
+        let (text, values) = answer(sync_panel(true, Some((111, 112)), None, None).unwrap());
+        assert_eq!(text, "Search from 2023-04-01 to 2023-05-31.");
+        assert_eq!(values, json!({"start": "2023-04-01", "end": "2023-05-31"}));
+        let (text, values) = answer(sync_panel(true, None, Some("2023-04-01"), None).unwrap());
+        assert!(text.contains("latest"), "a range missing from the request clears the dates: {text}");
+        assert_eq!(values, json!({"start": null, "end": null}));
+        let (_, values) = answer(sync_panel(false, None, Some("2023-04-14"), Some("2024-01-02")).unwrap());
+        assert_eq!(values, json!({"months": [111, 120]}));
+        let (text, _) = answer(sync_panel(false, None, Some("2023-04-14"), None).unwrap());
+        assert!(text.starts_with("Pick both"), "{text}");
+        let (text, values) = answer(sync_panel(false, None, Some("2023-05-01"), Some("2023-04-01")).unwrap());
+        assert_eq!((text.as_str(), values), ("The start date comes after the end date.", json!({})));
+        assert!(sync_panel(false, None, Some("2023-02-30"), Some("2023-04-01")).is_err());
     }
 
     #[test]

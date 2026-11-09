@@ -63,7 +63,7 @@ pub fn product(short_name: &str) -> Option<&'static Product> {
 
 // ---------- Dates ----------
 
-/// The month range's first month (index 0): January of this year.
+/// The month range's first year: index 0 is January 2014.
 pub const FIRST_YEAR: i64 = 2014;
 /// How many months the range spans, to December 2030.
 pub const MONTHS: i64 = (2030 - FIRST_YEAR + 1) * 12;
