@@ -52,7 +52,7 @@
     {
       "id": "display-all",
       "label": "Display\nAll",
-      "help": "Show every granule found (up to 25) as raster layers.",
+      "help": "Show the newest granule of each tile found (up to 25) as raster layers.",
       "icon": "bands",
       "params": "{\"band\"?: layer token, \"rescale\"?, \"colormap\"?, \"waterOnly\"?, \"opacity\"?}"
     },

@@ -374,6 +374,26 @@ pub fn latest_versions(granules: Vec<Granule>) -> Vec<Granule> {
     out
 }
 
+/// The newest footprint record of each tile (by `datetime`), in the order of `records`. Records
+/// without a tile are all kept. Display All shows these: older dates of a tile lie beneath the
+/// newest one, and every extra layer costs titiler-cmr requests on each pan and zoom.
+pub fn newest_per_tile(records: Vec<&Value>) -> Vec<&Value> {
+    let tile = |r: &Value| r["tile"].as_str().unwrap_or_default().to_string();
+    let newest = |t: &str| records.iter().filter(|r| tile(r) == t).map(|r| r["datetime"].as_str().unwrap_or_default()).max();
+    let mut seen: Vec<String> = Vec::new();
+    let mut out = Vec::new();
+    for r in &records {
+        let t = tile(r);
+        if t.is_empty() {
+            out.push(*r);
+        } else if !seen.contains(&t) && r["datetime"].as_str().unwrap_or_default() == newest(&t).unwrap_or_default() {
+            seen.push(t);
+            out.push(*r);
+        }
+    }
+    out
+}
+
 /// The 64-bit FNV-1a hash of `s`: a short, stable tile layer id for a granule's layer.
 pub fn fnv1a(s: &str) -> u64 {
     s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3))
@@ -650,5 +670,20 @@ mod tests {
         assert_eq!(Style::for_band(rtc, "VV", false, None, None), named("0,0.4", "gray"));
         assert_eq!(rtc.default_band(&["VH".into(), "VV".into()]).as_deref(), Some("VV"));
         assert_eq!(product("nope").map(|p| p.label), None);
+    }
+
+    #[test]
+    fn keeps_the_newest_granule_of_each_tile() {
+        let r = |ur: &str, tile: &str, dt: &str| json!({"granule": ur, "tile": tile, "datetime": dt});
+        let records = [
+            r("a1", "T11SKA", "2023-04-01T18:54:23Z"),
+            r("b1", "T10SGF", "2023-04-01T18:54:24Z"),
+            r("a2", "T11SKA", "2023-04-14T18:33:16Z"),
+            r("x", "", "2023-04-02T00:00:00Z"),
+            r("b2", "T10SGF", "2023-04-11T18:54:22Z"),
+            r("y", "", "2023-04-03T00:00:00Z"),
+        ];
+        let kept: Vec<&str> = newest_per_tile(records.iter().collect()).iter().filter_map(|r| r["granule"].as_str()).collect();
+        assert_eq!(kept, ["a2", "x", "b2", "y"]);
     }
 }

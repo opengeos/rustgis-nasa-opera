@@ -9,6 +9,7 @@
 //! - **Display** shows the selected footprints' granules (one tile layer each) through
 //!   [titiler-cmr](https://github.com/developmentseed/titiler-cmr), which reads the
 //!   Cloud-Optimized GeoTIFFs with Earthdata credentials of its own, so RustGIS needs none.
+//!   **Display All** shows the newest granule of each tile found.
 //!
 //! Every command also takes its parameters from scripts and `rustgis-cli`, which have no panes:
 //!
@@ -494,6 +495,9 @@ fn display(req: &Request, all: bool) -> Result<Value, String> {
     let band = pick_band(req.str("band"), req.panel_str("band"), &bands_of(&picked), product)?;
     // Only the granules that have the band count toward the cap.
     picked.retain(|r| has_band(r, &band));
+    if all {
+        picked = opera::newest_per_tile(picked);
+    }
     let skipped = picked.len().saturating_sub(MAX_DISPLAY);
     picked.truncate(MAX_DISPLAY);
     let water_only = req.bool("waterOnly").or_else(|| req.panel_bool("water-only")).unwrap_or(false);
@@ -533,7 +537,8 @@ fn display(req: &Request, all: bool) -> Result<Value, String> {
     if !selected.is_empty() {
         host::run("select.rows", json!({"layer": FOOTPRINTS, "rows": [], "mode": "new"}))?;
     }
-    let mut text = format!("Showing {} {} layer(s) of {band}.", shown.len(), product.label);
+    let newest = if all { ", the newest of each tile" } else { "" };
+    let mut text = format!("Showing {} {} layer(s) of {band}{newest}.", shown.len(), product.label);
     if skipped > 0 {
         text.push_str(&format!(" {skipped} more left out: at most {MAX_DISPLAY} at a time."));
     }
