@@ -44,6 +44,7 @@ dependencies = [
 [[package]]
 name = "rustgis-plugin"
 version = "0.1.0"
+source = "git+https://github.com/opengeos/rustgis-plugins#b40437a3f0d209c567475d731b9aaf810c260944"
 dependencies = [
  "serde_json",
 ]
