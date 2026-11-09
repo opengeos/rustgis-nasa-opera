@@ -65,10 +65,11 @@ with **Plugins › Install From File** (or drop it on the RustGIS window), or on
 rustgis-cli plugins install nasa-opera-0.2.0.rgplugin
 ```
 
-It needs RustGIS 0.7.0 or later (its panel uses dropdowns, date pickers and a range slider;
-0.1.0 runs in 0.6.0). The install prompt lists its permissions: **edit** (it adds the footprints
-and tile layers) and **network** (it reads `cmr.earthdata.nasa.gov` and adds tiles from
-`titiler-cmr.opengeos.org`; it contacts no other host).
+Its panel uses dropdowns, date pickers and a range slider, which come after RustGIS 0.6.0 (in
+RustGIS's `main` now, and in 0.7.0); in 0.6.0 itself the plugin doesn't load. The install prompt
+lists its permissions: **edit** (it adds the footprints and tile layers) and **network** (it
+reads `cmr.earthdata.nasa.gov` and adds tiles from `titiler-cmr.opengeos.org`; it contacts no
+other host).
 
 ## Use it from scripts and the command line
 
