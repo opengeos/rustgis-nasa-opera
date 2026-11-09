@@ -1,0 +1,54 @@
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "0.1.0",
+  "description": "Geoprocessing tools: a point at the centre of each feature, and a selection of the features whose value is above a threshold.",
+  "author": "Your Name",
+  "homepage": "https://github.com/you/my-plugin",
+  "license": "MIT",
+  "entry": "plugin.wasm",
+  "abi": 1,
+  "minRustgisVersion": "0.3.0",
+  "permissions": [],
+  "tools": [
+    {
+      "id": "centroids",
+      "name": "Vertex Centroids",
+      "summary": "Adds a point at the mean of each feature's vertices, keeping its attributes.",
+      "toolbox": "My Plugin",
+      "params": [
+        { "name": "input", "label": "Input features", "kind": "vectorLayer", "required": true },
+        { "name": "suffix", "label": "Output name suffix", "kind": "text", "default": "centroids" }
+      ]
+    },
+    {
+      "id": "select-by-value",
+      "name": "Select By Value",
+      "summary": "Selects the features whose numeric field compares with a value.",
+      "toolbox": "My Plugin",
+      "params": [
+        { "name": "input", "label": "Input features", "kind": "vectorLayer", "required": true },
+        { "name": "field", "label": "Field", "kind": "numericField", "required": true },
+        { "name": "op", "label": "Comparison", "kind": "choice", "choices": ["greater than", "less than", "equal to"], "default": "greater than" },
+        { "name": "value", "label": "Value", "kind": "number", "default": 0 }
+      ]
+    }
+  ],
+  "i18n": {
+    "de": {
+      "My Plugin": "Mein Plugin",
+      "Vertex Centroids": "Stützpunkt-Schwerpunkte",
+      "Select By Value": "Nach Wert auswählen",
+      "Input features": "Eingabe-Features",
+      "Output name suffix": "Suffix des Ausgabenamens",
+      "Field": "Feld",
+      "Comparison": "Vergleich",
+      "greater than": "größer als",
+      "less than": "kleiner als",
+      "equal to": "gleich",
+      "Value": "Wert",
+      "{n} centroids": "{n} Schwerpunkte",
+      "{n} of {total} features selected": "{n} von {total} Features ausgewählt"
+    }
+  }
+}

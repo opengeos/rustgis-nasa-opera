@@ -1,0 +1,45 @@
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "0.1.0",
+  "description": "Commands on the Plugins tab: a summary of the map's layers, zooming to the largest one, and a pin at the map's centre.",
+  "author": "Your Name",
+  "homepage": "https://github.com/you/my-plugin",
+  "license": "MIT",
+  "entry": "plugin.wasm",
+  "abi": 1,
+  "minRustgisVersion": "0.3.0",
+  "permissions": ["edit"],
+  "commands": [
+    {
+      "id": "layer-report",
+      "label": "Layer\nReport",
+      "help": "Count the map's layers and features, and show the summary in the status bar.",
+      "icon": "stats"
+    },
+    {
+      "id": "zoom-largest",
+      "label": "Zoom To\nLargest",
+      "help": "Zoom to the layer with the most features.",
+      "icon": "zoom_full"
+    },
+    {
+      "id": "pin-center",
+      "label": "Pin\nCenter",
+      "help": "Add a point at the centre of the map to a new Pins layer.",
+      "icon": "bookmark",
+      "params": "{\"name\"?: layer name}"
+    }
+  ],
+  "i18n": {
+    "de": {
+      "My Plugin": "Mein Plugin",
+      "Layer\nReport": "Ebenen-\nbericht",
+      "Zoom To\nLargest": "Zur größten\nzoomen",
+      "Pin\nCenter": "Mitte\nmarkieren",
+      "{n} layers with {features} features in all.": "{n} Ebenen mit insgesamt {features} Features.",
+      "The map has no feature layers.": "Die Karte hat keine Feature-Ebenen.",
+      "Zoomed to {name}.": "Auf {name} gezoomt."
+    }
+  }
+}

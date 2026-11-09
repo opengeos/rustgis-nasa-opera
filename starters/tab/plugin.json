@@ -1,0 +1,68 @@
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "0.1.0",
+  "description": "A ribbon tab of its own: a menu of places to go to, a summary of the map's layers, and a tool that draws bounding boxes.",
+  "author": "Your Name",
+  "homepage": "https://github.com/you/my-plugin",
+  "license": "MIT",
+  "entry": "plugin.wasm",
+  "abi": 1,
+  "minRustgisVersion": "0.3.0",
+  "permissions": [],
+  "commands": [
+    { "id": "go-africa", "label": "Africa", "help": "Go to Africa.", "icon": "zoom_world" },
+    { "id": "go-americas", "label": "Americas", "help": "Go to the Americas.", "icon": "zoom_world" },
+    { "id": "go-asia", "label": "Asia", "help": "Go to Asia.", "icon": "zoom_world" },
+    { "id": "go-europe", "label": "Europe", "help": "Go to Europe.", "icon": "zoom_world" },
+    { "id": "zoom-world", "label": "Whole\nWorld", "help": "Zoom out to the whole world.", "icon": "zoom_full" },
+    { "id": "layer-report", "label": "Layer\nReport", "help": "Count the map's layers and features.", "icon": "stats" }
+  ],
+  "tools": [
+    {
+      "id": "bounding-boxes",
+      "name": "Bounding Boxes",
+      "summary": "Draws the bounding box of each feature, or of the whole layer.",
+      "toolbox": "My Plugin",
+      "params": [
+        { "name": "input", "label": "Input features", "kind": "vectorLayer", "required": true },
+        { "name": "whole", "label": "One box for the whole layer", "kind": "bool", "default": false }
+      ]
+    }
+  ],
+  "tab": {
+    "label": "My Plugin",
+    "groups": [
+      {
+        "label": "Go To",
+        "items": [
+          {
+            "menu": "Continent",
+            "icon": "zoom_world",
+            "help": "Go to a continent.",
+            "items": ["go-africa", "go-americas", "go-asia", "go-europe"]
+          },
+          "zoom-world"
+        ]
+      },
+      { "label": "Inspect", "items": ["layer-report", "tool:bounding-boxes"] }
+    ]
+  },
+  "i18n": {
+    "de": {
+      "My Plugin": "Mein Plugin",
+      "Go To": "Gehe zu",
+      "Continent": "Kontinent",
+      "Africa": "Afrika",
+      "Americas": "Amerika",
+      "Asia": "Asien",
+      "Europe": "Europa",
+      "Whole\nWorld": "Ganze\nWelt",
+      "Inspect": "Untersuchen",
+      "Layer\nReport": "Ebenen-\nbericht",
+      "Bounding Boxes": "Begrenzungsrahmen",
+      "Input features": "Eingabe-Features",
+      "{n} layers with {features} features in all.": "{n} Ebenen mit insgesamt {features} Features."
+    }
+  }
+}
