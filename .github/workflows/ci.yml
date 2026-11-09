@@ -18,6 +18,12 @@ env:
   # The RustGIS release the plugin is run in: the latest, unless the RUSTGIS_VERSION repository
   # variable names one (v0.3.0).
   RUSTGIS_VERSION: ${{ vars.RUSTGIS_VERSION }}
+  # While the plugin waits on changes that haven't landed, these repository variables point CI
+  # at them: RUSTGIS_PLUGINS_REF, a branch of opengeos/rustgis-plugins (the SDK the plugin builds
+  # with and the registry's checks), and RUSTGIS_REF, a branch of opengeos/RustGIS (the
+  # rustgis-cli the plugin runs in). Unset, they are main. Delete them once those changes merge.
+  RUSTGIS_PLUGINS_REF: ${{ vars.RUSTGIS_PLUGINS_REF }}
+  RUSTGIS_REF: ${{ vars.RUSTGIS_REF }}
 
 jobs:
   build:
@@ -33,6 +39,13 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: Use the SDK from a rustgis-plugins branch
+        if: env.RUSTGIS_PLUGINS_REF != '' && env.RUSTGIS_PLUGINS_REF != 'main'
+        run: |
+          git clone -q --depth 1 --branch "$RUSTGIS_PLUGINS_REF" https://github.com/opengeos/rustgis-plugins "$RUNNER_TEMP/rustgis-plugins"
+          mkdir -p .cargo
+          printf '[patch."https://github.com/opengeos/rustgis-plugins"]\nrustgis-plugin = { path = "%s/rustgis-plugins/sdk" }\n' "$RUNNER_TEMP" > .cargo/config.toml
+          echo "::notice::Building with the SDK from rustgis-plugins branch $RUSTGIS_PLUGINS_REF."
       - name: Format
         run: cargo fmt --check
       - name: Clippy
@@ -41,13 +54,62 @@ jobs:
         run: cargo test
       - name: Build, check and package
         run: python scripts/package.py
-      - name: Download rustgis-cli
+      # The latest release (or RUSTGIS_VERSION), unless the plugin needs a newer RustGIS than
+      # that: then rustgis-cli is built from RustGIS's main branch (or RUSTGIS_REF), where the
+      # features a new minRustgisVersion waits for land before they are released.
+      - name: Pick the RustGIS to run the plugin in
+        id: pick
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download $RUSTGIS_VERSION --repo opengeos/RustGIS --pattern 'RustGIS-*-linux-x86_64.tar.gz' --dir "$RUNNER_TEMP"
+          tag="${RUSTGIS_VERSION:-$(gh release view --repo opengeos/RustGIS --json tagName --jq .tagName)}"
+          need=$(python -c "import json; print(json.load(open('plugin.json')).get('minRustgisVersion', '0'))")
+          newer=$(python -c "import sys; v=lambda s: [int(x) for x in s.lstrip('v').split('-')[0].split('.')]; print(str(v(sys.argv[2]) > v(sys.argv[1])).lower())" "$tag" "$need")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "main=$newer" >> "$GITHUB_OUTPUT"
+          ref="${RUSTGIS_REF:-main}"
+          echo "sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)" >> "$GITHUB_OUTPUT"
+          if [ "$newer" = true ]; then
+            echo "::notice::The plugin needs RustGIS $need, newer than $tag: running it in rustgis-cli built from RustGIS $ref."
+          fi
+      - name: Download rustgis-cli
+        if: steps.pick.outputs.main != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pick.outputs.tag }}
+        run: |
+          gh release download "$TAG" --repo opengeos/RustGIS --pattern 'RustGIS-*-linux-x86_64.tar.gz' --dir "$RUNNER_TEMP"
           tar xzf "$RUNNER_TEMP"/RustGIS-*-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
           echo "RUSTGIS_CLI=$(ls "$RUNNER_TEMP"/RustGIS-*-linux-x86_64/rustgis-cli)" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        if: steps.pick.outputs.main == 'true'
+        id: cli-cache
+        with:
+          path: ~/rustgis-cli
+          key: rustgis-cli-${{ runner.os }}-${{ steps.pick.outputs.sha }}
+      - name: Build rustgis-cli from RustGIS main (or RUSTGIS_REF)
+        if: steps.pick.outputs.main == 'true' && steps.cli-cache.outputs.cache-hit != 'true'
+        env:
+          SHA: ${{ steps.pick.outputs.sha }}
+        run: |
+          cargo install --locked --git https://github.com/opengeos/RustGIS --rev "$SHA" rustgis-cli --root ~/rustgis-cli-root
+          mkdir -p ~/rustgis-cli && cp ~/rustgis-cli-root/bin/rustgis-cli ~/rustgis-cli/
+      # main still carries the last release's version number, so the plugin folder the smoke test
+      # loads asks for that one: main is what the next release will be.
+      - name: Use rustgis-cli from RustGIS main (or RUSTGIS_REF)
+        if: steps.pick.outputs.main == 'true'
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+        run: |
+          echo "RUSTGIS_CLI=$HOME/rustgis-cli/rustgis-cli" >> "$GITHUB_ENV"
+          python - "$TAG" <<'PY'
+          import json, pathlib, sys
+          m = json.loads(pathlib.Path("plugin.json").read_text())
+          f = pathlib.Path("dist") / m["id"] / "plugin.json"
+          d = json.loads(f.read_text())
+          d["minRustgisVersion"] = sys.argv[1].lstrip("v")
+          f.write_text(json.dumps(d, indent=2))
+          PY
       - name: Run the plugin in RustGIS
         run: python scripts/smoke.py --cli "$RUSTGIS_CLI"
       - uses: actions/upload-artifact@v7

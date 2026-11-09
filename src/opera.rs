@@ -63,9 +63,9 @@ pub fn product(short_name: &str) -> Option<&'static Product> {
 
 // ---------- Dates ----------
 
-/// The month slider's first month (index 1); index 0 is "the latest granules".
+/// The month range's first year: index 0 is January 2014.
 pub const FIRST_YEAR: i64 = 2014;
-/// The month slider's last index (December 2030).
+/// How many months the range spans, to December 2030.
 pub const MONTHS: i64 = (2030 - FIRST_YEAR + 1) * 12;
 
 /// A date as (year, month, day).
@@ -99,30 +99,31 @@ pub fn days_in_month(y: i64, m: u32) -> u32 {
     }
 }
 
-/// The month at slider index `i` (from 1).
+/// The month at range index `i` (from 0), as (year, month).
 pub fn month_of(i: i64) -> (i64, u32) {
-    let k = (i - 1).max(0);
+    let k = i.clamp(0, MONTHS - 1);
     (FIRST_YEAR + k / 12, (k % 12) as u32 + 1)
 }
 
-/// The month slider's labels: "Latest", then every month.
-pub fn month_labels() -> Vec<String> {
-    let mut v = vec!["Latest".to_string()];
-    v.extend((1..=MONTHS).map(|i| {
-        let (y, m) = month_of(i);
-        format!("{y}-{m:02}")
-    }));
-    v
+/// The range index of a date's month, kept within the range.
+pub fn month_index((y, m, _): Date) -> i64 {
+    ((y - FIRST_YEAR) * 12 + i64::from(m) - 1).clamp(0, MONTHS - 1)
 }
 
-/// The first and last day of `span` months from slider index `i`; `None` for index 0 (latest).
-pub fn month_window(i: i64, span: i64) -> Option<(String, String)> {
-    if i <= 0 {
-        return None;
-    }
-    let (y, m) = month_of(i);
-    let (y2, m2) = month_of((i + span - 1).min(MONTHS));
-    Some((fmt_date((y, m, 1)), fmt_date((y2, m2, days_in_month(y2, m2)))))
+/// The month range's labels, one per month: `2023-04`.
+pub fn month_labels() -> Vec<String> {
+    (0..MONTHS)
+        .map(|i| {
+            let (y, m) = month_of(i);
+            format!("{y}-{m:02}")
+        })
+        .collect()
+}
+
+/// The first day of month `lo` and the last day of month `hi` (range indexes).
+pub fn range_window(lo: i64, hi: i64) -> (String, String) {
+    let ((y, m), (y2, m2)) = (month_of(lo.min(hi)), month_of(lo.max(hi)));
+    (fmt_date((y, m, 1)), fmt_date((y2, m2, days_in_month(y2, m2))))
 }
 
 // ---------- CMR ----------
@@ -600,14 +601,15 @@ mod tests {
 
     #[test]
     fn months_and_dates() {
-        assert_eq!(month_window(0, 3), None);
-        assert_eq!(month_window(1, 1), Some(("2014-01-01".into(), "2014-01-31".into())));
-        // 2024-02 is index (2024-2014)*12 + 2.
-        assert_eq!(month_window(122, 1), Some(("2024-02-01".into(), "2024-02-29".into())));
-        assert_eq!(month_window(122, 12), Some(("2024-02-01".into(), "2025-01-31".into())));
-        assert_eq!(month_window(MONTHS, 6), Some(("2030-12-01".into(), "2030-12-31".into())));
-        assert_eq!(month_labels().len() as i64, MONTHS + 1);
-        assert_eq!(month_labels()[122], "2024-02");
+        assert_eq!(range_window(0, 0), ("2014-01-01".into(), "2014-01-31".into()));
+        // 2024-02 is index (2024-2014)*12 + 1.
+        assert_eq!(range_window(121, 121), ("2024-02-01".into(), "2024-02-29".into()));
+        assert_eq!(range_window(132, 121), ("2024-02-01".into(), "2025-01-31".into()), "low first");
+        assert_eq!(range_window(MONTHS - 1, MONTHS + 5), ("2030-12-01".into(), "2030-12-31".into()));
+        assert_eq!(month_labels().len() as i64, MONTHS);
+        assert_eq!(month_labels()[121], "2024-02");
+        assert_eq!(month_index((2024, 2, 17)), 121);
+        assert_eq!((month_index((2001, 5, 1)), month_index((2040, 1, 1))), (0, MONTHS - 1), "kept within the range");
         assert_eq!(parse_date("2023-04-30T10:00:00Z"), Ok((2023, 4, 30)));
         assert!(parse_date("2023-02-29").is_err());
         assert!(parse_date("2023-4-1").is_err());

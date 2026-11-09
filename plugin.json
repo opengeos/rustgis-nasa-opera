@@ -1,14 +1,14 @@
 {
   "id": "nasa-opera",
   "name": "NASA OPERA",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Search and visualize NASA OPERA products (surface water, land disturbance, SAR backscatter) on the map: granule footprints from NASA CMR, rasters from titiler-cmr, with no Earthdata login.",
   "author": "Qiusheng Wu",
   "homepage": "https://github.com/opengeos/rustgis-nasa-opera",
   "license": "MIT",
   "entry": "plugin.wasm",
   "abi": 1,
-  "minRustgisVersion": "0.6.0",
+  "minRustgisVersion": "0.7.0",
   "permissions": [
     "edit",
     "network"
@@ -24,9 +24,9 @@
     {
       "id": "search",
       "label": "Search",
-      "help": "Search NASA CMR for granules of the chosen product over the map view (or the selected features) and the chosen months, and draw their footprints.",
+      "help": "Search NASA CMR for granules of the chosen product over the map view (or the selected features) between the panel's dates (none: the latest), and draw their footprints.",
       "icon": "search",
-      "params": "{\"product\"?: CMR short name (OPERA_L3_DSWX-HLS_V1…), \"bbox\"?: [west, south, east, north] (default: the map view), \"start\"?: \"YYYY-MM-DD\", \"end\"?: \"YYYY-MM-DD\" | \"latest\"?: true (default: the panel's months), \"limit\"?: 1..100}"
+      "params": "{\"product\"?: CMR short name (OPERA_L3_DSWX-HLS_V1…), \"bbox\"?: [west, south, east, north] (default: the map view), \"start\"?: \"YYYY-MM-DD\", \"end\"?: \"YYYY-MM-DD\" | \"latest\"?: true (default: the panel's dates; none: the latest), \"limit\"?: 1..100}"
     },
     {
       "id": "choose-granule",
@@ -34,6 +34,13 @@
       "help": "Select the chosen granule (or every granule of the chosen date) on the map and list its layers.",
       "icon": "identify",
       "params": "{\"granule\"?: granule UR | \"date\"?: \"YYYY-MM-DD\" (default: the panel's choice)}"
+    },
+    {
+      "id": "sync-dates",
+      "label": "Sync\nDates",
+      "help": "Set the dates from the month range, or the month range from the dates.",
+      "icon": "time_slider",
+      "params": "{\"panel\"?: {\"months\"?: [low, high] | \"start\"?: \"YYYY-MM-DD\", \"end\"?: \"YYYY-MM-DD\"}}"
     },
     {
       "id": "display",
@@ -71,28 +78,73 @@
     "state": "panel-state",
     "items": [
       {
-        "kind": "tree",
+        "kind": "choice",
         "id": "product",
         "label": "Product",
-        "command": "panel-state"
+        "command": "panel-state",
+        "options": [
+          {
+            "id": "OPERA_L3_DSWX-HLS_V1",
+            "label": "DSWx-HLS · surface water, optical"
+          },
+          {
+            "id": "OPERA_L3_DSWX-S1_V1",
+            "label": "DSWx-S1 · surface water, radar"
+          },
+          {
+            "id": "OPERA_L3_DIST-ALERT-HLS_V1",
+            "label": "DIST-ALERT · disturbance alerts"
+          },
+          {
+            "id": "OPERA_L3_DIST-ANN-HLS_V1",
+            "label": "DIST-ANN · annual disturbance"
+          },
+          {
+            "id": "OPERA_L2_RTC-S1_V1",
+            "label": "RTC-S1 · SAR backscatter"
+          },
+          {
+            "id": "OPERA_L2_RTC-S1-STATIC_V1",
+            "label": "RTC-S1 static · incidence angles, masks"
+          },
+          {
+            "id": "OPERA_L2_CSLC-S1_V1",
+            "label": "CSLC-S1 · SLC, footprints only"
+          },
+          {
+            "id": "OPERA_L2_CSLC-S1-STATIC_V1",
+            "label": "CSLC-S1 static · footprints only"
+          },
+          {
+            "id": "OPERA_L3_DISP-S1_V1",
+            "label": "DISP-S1 · displacement, footprints only"
+          }
+        ],
+        "default": "OPERA_L3_DSWX-HLS_V1"
       },
       {
-        "kind": "slider",
-        "id": "month",
-        "label": "Months from",
+        "kind": "date",
+        "id": "start",
+        "label": "Start date",
+        "command": "sync-dates",
+        "help": "Clear both dates to search the latest granules."
+      },
+      {
+        "kind": "date",
+        "id": "end",
+        "label": "End date",
+        "command": "sync-dates",
+        "help": "Clear both dates to search the latest granules."
+      },
+      {
+        "kind": "range",
+        "id": "months",
+        "label": "Months",
         "min": 0,
-        "max": 204,
-        "default": 0,
-        "steps": true
-      },
-      {
-        "kind": "slider",
-        "id": "span",
-        "label": "Months to search",
-        "min": 1,
-        "max": 12,
-        "default": 1,
-        "steps": true
+        "max": 203,
+        "steps": true,
+        "command": "sync-dates",
+        "help": "Drag the handles to set the dates to whole months."
       },
       {
         "kind": "slider",
@@ -117,19 +169,20 @@
         "kind": "text",
         "id": "status",
         "label": "Results",
-        "text": "Pick a product and a month, then Search."
+        "text": "Pick a product and dates (or none for the latest), then Search."
       },
       {
-        "kind": "tree",
+        "kind": "choice",
         "id": "granule",
-        "label": "Granules",
-        "search": true,
-        "command": "choose-granule"
+        "label": "Granule",
+        "command": "choose-granule",
+        "help": "A date takes all its granules together."
       },
       {
-        "kind": "tree",
+        "kind": "choice",
         "id": "band",
-        "label": "Layer"
+        "label": "Layer",
+        "help": "The granule's dataset to show."
       },
       {
         "kind": "checkbox",
@@ -165,5 +218,26 @@
   },
   "skills": [
     "opera-flood-map"
-  ]
+  ],
+  "tab": {
+    "label": "OPERA",
+    "groups": [
+      {
+        "label": "Search",
+        "items": [
+          "panel",
+          "search",
+          "zoom-results"
+        ]
+      },
+      {
+        "label": "Show",
+        "items": [
+          "display",
+          "display-all",
+          "clear"
+        ]
+      }
+    ]
+  }
 }
