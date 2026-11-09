@@ -9,6 +9,8 @@
 //! - **Display** shows the selected footprints' granules (one tile layer each) through
 //!   [titiler-cmr](https://github.com/developmentseed/titiler-cmr), which reads the
 //!   Cloud-Optimized GeoTIFFs with Earthdata credentials of its own, so RustGIS needs none.
+//!   **Display All** shows the newest granule of each tile found that has the
+//!   chosen layer, at most 25 tiles.
 //!
 //! Every command also takes its parameters from scripts and `rustgis-cli`, which have no panes:
 //!
@@ -287,7 +289,7 @@ fn footprints(selected: bool) -> Result<Vec<Value>, String> {
 
 /// Sorts footprint records newest first, by acquisition time.
 fn newest_first(records: &mut [Value]) {
-    records.sort_by(|a, b| b["datetime"].as_str().cmp(&a["datetime"].as_str()));
+    records.sort_by_cached_key(|r| std::cmp::Reverse(opera::time_key(r["datetime"].as_str().unwrap_or_default())));
 }
 
 /// Whether the map has the plugin's footprints layer: named `OPERA footprints` and with the
@@ -494,6 +496,11 @@ fn display(req: &Request, all: bool) -> Result<Value, String> {
     let band = pick_band(req.str("band"), req.panel_str("band"), &bands_of(&picked), product)?;
     // Only the granules that have the band count toward the cap.
     picked.retain(|r| has_band(r, &band));
+    let before = picked.len();
+    if all {
+        picked = opera::newest_per_tile(picked);
+    }
+    let older = before - picked.len();
     let skipped = picked.len().saturating_sub(MAX_DISPLAY);
     picked.truncate(MAX_DISPLAY);
     let water_only = req.bool("waterOnly").or_else(|| req.panel_bool("water-only")).unwrap_or(false);
@@ -533,7 +540,11 @@ fn display(req: &Request, all: bool) -> Result<Value, String> {
     if !selected.is_empty() {
         host::run("select.rows", json!({"layer": FOOTPRINTS, "rows": [], "mode": "new"}))?;
     }
-    let mut text = format!("Showing {} {} layer(s) of {band}.", shown.len(), product.label);
+    let newest = if all { ", the newest of each tile with it" } else { "" };
+    let mut text = format!("Showing {} {} layer(s) of {band}{newest}.", shown.len(), product.label);
+    if older > 0 {
+        text.push_str(&format!(" {older} older granule(s) of the same tiles left out: Display shows a chosen date."));
+    }
     if skipped > 0 {
         text.push_str(&format!(" {skipped} more left out: at most {MAX_DISPLAY} at a time."));
     }
