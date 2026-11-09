@@ -1,45 +1,169 @@
 {
-  "id": "my-plugin",
-  "name": "My Plugin",
+  "id": "nasa-opera",
+  "name": "NASA OPERA",
   "version": "0.1.0",
-  "description": "Commands on the Plugins tab: a summary of the map's layers, zooming to the largest one, and a pin at the map's centre.",
-  "author": "Your Name",
-  "homepage": "https://github.com/you/my-plugin",
+  "description": "Search and visualize NASA OPERA products (surface water, land disturbance, SAR backscatter) on the map: granule footprints from NASA CMR, rasters from titiler-cmr, with no Earthdata login.",
+  "author": "Qiusheng Wu",
+  "homepage": "https://github.com/opengeos/rustgis-nasa-opera",
   "license": "MIT",
   "entry": "plugin.wasm",
   "abi": 1,
-  "minRustgisVersion": "0.3.0",
-  "permissions": ["edit"],
+  "minRustgisVersion": "0.6.0",
+  "permissions": [
+    "edit",
+    "network"
+  ],
   "commands": [
     {
-      "id": "layer-report",
-      "label": "Layer\nReport",
-      "help": "Count the map's layers and features, and show the summary in the status bar.",
-      "icon": "stats"
+      "id": "panel-state",
+      "label": "Refresh",
+      "help": "Read the search results on the map again.",
+      "icon": "update",
+      "params": "{}"
     },
     {
-      "id": "zoom-largest",
-      "label": "Zoom To\nLargest",
-      "help": "Zoom to the layer with the most features.",
-      "icon": "zoom_full"
+      "id": "search",
+      "label": "Search",
+      "help": "Search NASA CMR for granules of the chosen product over the map view (or the selected features) and the chosen months, and draw their footprints.",
+      "icon": "search",
+      "params": "{\"product\"?: CMR short name (OPERA_L3_DSWX-HLS_V1…), \"bbox\"?: [west, south, east, north] (default: the map view), \"start\"?: \"YYYY-MM-DD\", \"end\"?: \"YYYY-MM-DD\" (default: the panel's months, or the latest granules), \"limit\"?: 1..100}"
     },
     {
-      "id": "pin-center",
-      "label": "Pin\nCenter",
-      "help": "Add a point at the centre of the map to a new Pins layer.",
-      "icon": "bookmark",
-      "params": "{\"name\"?: layer name}"
+      "id": "choose-granule",
+      "label": "Choose\nGranule",
+      "help": "Select the chosen granule (or every granule of the chosen date) on the map and list its layers.",
+      "icon": "identify",
+      "params": "{\"granule\"?: granule UR | \"date\"?: \"YYYY-MM-DD\" (default: the panel's choice)}"
+    },
+    {
+      "id": "display",
+      "label": "Display",
+      "help": "Show the selected footprints' granules (or the chosen granule) as raster layers, through titiler-cmr.",
+      "icon": "raster_layer",
+      "params": "{\"granule\"?: granule UR | \"date\"?: \"YYYY-MM-DD\" (default: the selected footprints, else the panel's choice), \"band\"?: layer token (B01_WTR, VV, VEG-DIST-STATUS…), \"rescale\"?: \"min,max\", \"colormap\"?: titiler colormap name (viridis, terrain…), \"waterOnly\"?: bool, \"opacity\"?: 0..100}"
+    },
+    {
+      "id": "display-all",
+      "label": "Display\nAll",
+      "help": "Show every granule found (up to 25) as raster layers.",
+      "icon": "bands",
+      "params": "{\"band\"?: layer token, \"rescale\"?, \"colormap\"?, \"waterOnly\"?, \"opacity\"?}"
+    },
+    {
+      "id": "zoom-results",
+      "label": "Zoom to\nResults",
+      "help": "Zoom to the footprints of the last search.",
+      "icon": "zoom_full",
+      "params": "{}"
+    },
+    {
+      "id": "clear",
+      "label": "Clear",
+      "help": "Remove the footprints and every OPERA raster layer from the map.",
+      "icon": "delete",
+      "params": "{}"
     }
   ],
-  "i18n": {
-    "de": {
-      "My Plugin": "Mein Plugin",
-      "Layer\nReport": "Ebenen-\nbericht",
-      "Zoom To\nLargest": "Zur größten\nzoomen",
-      "Pin\nCenter": "Mitte\nmarkieren",
-      "{n} layers with {features} features in all.": "{n} Ebenen mit insgesamt {features} Features.",
-      "The map has no feature layers.": "Die Karte hat keine Feature-Ebenen.",
-      "Zoomed to {name}.": "Auf {name} gezoomt."
-    }
-  }
+  "panel": {
+    "title": "NASA OPERA",
+    "icon": "globe_view",
+    "help": "Search NASA OPERA granules over the map view and show them as raster layers.",
+    "state": "panel-state",
+    "items": [
+      {
+        "kind": "tree",
+        "id": "product",
+        "label": "Product",
+        "command": "panel-state"
+      },
+      {
+        "kind": "slider",
+        "id": "month",
+        "label": "Months from",
+        "min": 0,
+        "max": 204,
+        "default": 0,
+        "steps": true
+      },
+      {
+        "kind": "slider",
+        "id": "span",
+        "label": "Months to search",
+        "min": 1,
+        "max": 12,
+        "default": 1,
+        "steps": true
+      },
+      {
+        "kind": "slider",
+        "id": "limit",
+        "label": "Most granules",
+        "min": 1,
+        "max": 100,
+        "default": 25,
+        "steps": true
+      },
+      {
+        "kind": "checkbox",
+        "id": "use-selection",
+        "label": "Search the selected features' area",
+        "help": "Off: search the map view."
+      },
+      {
+        "kind": "button",
+        "command": "search"
+      },
+      {
+        "kind": "text",
+        "id": "status",
+        "label": "Results",
+        "text": "Pick a product and a month, then Search."
+      },
+      {
+        "kind": "tree",
+        "id": "granule",
+        "label": "Granules",
+        "search": true,
+        "command": "choose-granule"
+      },
+      {
+        "kind": "tree",
+        "id": "band",
+        "label": "Layer"
+      },
+      {
+        "kind": "checkbox",
+        "id": "water-only",
+        "label": "DSWx: water classes only",
+        "help": "Hide cloud, snow and ocean classes, leaving open and partial surface water."
+      },
+      {
+        "kind": "slider",
+        "id": "opacity",
+        "label": "Opacity (%)",
+        "min": 0,
+        "max": 100,
+        "default": 100
+      },
+      {
+        "kind": "button",
+        "command": "display"
+      },
+      {
+        "kind": "button",
+        "command": "display-all"
+      },
+      {
+        "kind": "button",
+        "command": "zoom-results"
+      },
+      {
+        "kind": "button",
+        "command": "clear"
+      }
+    ]
+  },
+  "skills": [
+    "opera-flood-map"
+  ]
 }

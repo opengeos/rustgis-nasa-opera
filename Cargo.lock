@@ -15,10 +15,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "my-plugin"
+name = "nasa-opera"
 version = "0.1.0"
 dependencies = [
  "rustgis-plugin",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -42,7 +44,7 @@ dependencies = [
 [[package]]
 name = "rustgis-plugin"
 version = "0.1.0"
-source = "git+https://github.com/opengeos/rustgis-plugins#efd5d07f11247df2677fbd878a108f4c0fde53dc"
+source = "git+https://github.com/opengeos/rustgis-plugins#b40437a3f0d209c567475d731b9aaf810c260944"
 dependencies = [
  "serde_json",
 ]
@@ -54,6 +56,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]
