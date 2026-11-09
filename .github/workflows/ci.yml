@@ -118,6 +118,13 @@ jobs:
           PY
       - name: Run the plugin in RustGIS
         run: python scripts/smoke.py --cli "$RUSTGIS_CLI"
+      # The folder the smoke test loaded may ask for an older RustGIS (above): the artifact gets the
+      # plugin.json the package has.
+      - name: Put the plugin folder's manifest back
+        if: always()
+        run: |
+          id=$(python -c 'import json; print(json.load(open("plugin.json"))["id"])')
+          if [ -d "dist/$id" ]; then cp plugin.json "dist/$id/plugin.json"; fi
       - uses: actions/upload-artifact@v7
         with:
           name: plugin
