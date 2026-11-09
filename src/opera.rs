@@ -384,22 +384,21 @@ pub fn time_key(datetime: &str) -> (String, String) {
     }
 }
 
-/// The newest footprint record of each tile (by `datetime`), where the tile first comes in `records`. Records
-/// without a tile are all kept. Display All shows these: older dates of a tile lie beneath the
+/// The newest footprint record of each tile (by `datetime`), in the order the tiles first come in
+/// `records`. Records without a tile are all kept. Display All shows these: older dates of a tile lie beneath the
 /// newest one, and every extra layer costs titiler-cmr requests on each pan and zoom.
 pub fn newest_per_tile(records: Vec<&Value>) -> Vec<&Value> {
-    let tile = |r: &Value| r["tile"].as_str().unwrap_or_default().to_string();
-    let key = |r: &Value| time_key(r["datetime"].as_str().unwrap_or_default());
-    let mut out: Vec<&Value> = Vec::new();
+    let mut out: Vec<(&str, (String, String), &Value)> = Vec::new();
     for r in records {
-        let t = tile(r);
-        match out.iter_mut().find(|o| !t.is_empty() && tile(o) == t) {
-            Some(o) if key(r) > key(o) => *o = r,
+        let tile = r["tile"].as_str().unwrap_or_default();
+        let key = time_key(r["datetime"].as_str().unwrap_or_default());
+        match out.iter_mut().find(|(t, _, _)| !tile.is_empty() && *t == tile) {
+            Some(o) if key > o.1 => *o = (tile, key, r),
             Some(_) => {}
-            None => out.push(r),
+            None => out.push((tile, key, r)),
         }
     }
-    out
+    out.into_iter().map(|(_, _, r)| r).collect()
 }
 
 /// The 64-bit FNV-1a hash of `s`: a short, stable tile layer id for a granule's layer.
