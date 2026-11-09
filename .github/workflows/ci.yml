@@ -65,12 +65,16 @@ jobs:
           tag="${RUSTGIS_VERSION:-$(gh release view --repo opengeos/RustGIS --json tagName --jq .tagName)}"
           need=$(python -c "import json; print(json.load(open('plugin.json')).get('minRustgisVersion', '0'))")
           newer=$(python -c "import sys; v=lambda s: [int(x) for x in s.lstrip('v').split('-')[0].split('.')]; print(str(v(sys.argv[2]) > v(sys.argv[1])).lower())" "$tag" "$need")
+          # RUSTGIS_REF set: always that branch (a plugin using what the release doesn't have yet).
+          if [ -n "$RUSTGIS_REF" ]; then newer=true; fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "main=$newer" >> "$GITHUB_OUTPUT"
           ref="${RUSTGIS_REF:-main}"
-          echo "sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)" >> "$GITHUB_OUTPUT"
+          sha=$(git ls-remote https://github.com/opengeos/RustGIS "refs/heads/$ref" | cut -f1)
+          test -n "$sha" || { echo "::error::No branch '$ref' in opengeos/RustGIS (check RUSTGIS_REF)."; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [ "$newer" = true ]; then
-            echo "::notice::The plugin needs RustGIS $need, newer than $tag: running it in rustgis-cli built from RustGIS $ref."
+            echo "::notice::Running the plugin (minRustgisVersion $need) in rustgis-cli built from RustGIS $ref, not $tag."
           fi
       - name: Download rustgis-cli
         if: steps.pick.outputs.main != 'true'
@@ -94,8 +98,8 @@ jobs:
         run: |
           cargo install --locked --git https://github.com/opengeos/RustGIS --rev "$SHA" rustgis-cli --root ~/rustgis-cli-root
           mkdir -p ~/rustgis-cli && cp ~/rustgis-cli-root/bin/rustgis-cli ~/rustgis-cli/
-      # main still carries the last release's version number, so the plugin folder the smoke test
-      # loads asks for that one: main is what the next release will be.
+      # main carries the last release's version number until the next release, so the plugin
+      # folder the smoke test loads asks for at most that one.
       - name: Use rustgis-cli from RustGIS main (or RUSTGIS_REF)
         if: steps.pick.outputs.main == 'true'
         env:
@@ -107,11 +111,20 @@ jobs:
           m = json.loads(pathlib.Path("plugin.json").read_text())
           f = pathlib.Path("dist") / m["id"] / "plugin.json"
           d = json.loads(f.read_text())
-          d["minRustgisVersion"] = sys.argv[1].lstrip("v")
+          v = lambda s: [int(x) for x in s.lstrip("v").split("-")[0].split(".")]
+          if v(d.get("minRustgisVersion", "0")) > v(sys.argv[1]):
+              d["minRustgisVersion"] = sys.argv[1].lstrip("v")
           f.write_text(json.dumps(d, indent=2))
           PY
       - name: Run the plugin in RustGIS
         run: python scripts/smoke.py --cli "$RUSTGIS_CLI"
+      # The folder the smoke test loaded may ask for an older RustGIS (above): the artifact gets the
+      # plugin.json the package has.
+      - name: Put the plugin folder's manifest back
+        if: always()
+        run: |
+          id=$(python -c 'import json; print(json.load(open("plugin.json"))["id"])')
+          if [ -d "dist/$id" ]; then cp plugin.json "dist/$id/plugin.json"; fi
       - uses: actions/upload-artifact@v7
         with:
           name: plugin
