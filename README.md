@@ -64,7 +64,7 @@ Download `nasa-opera-<version>.rgplugin` from the
 with **Plugins › Install From File** (or drop it on the RustGIS window), or on the command line:
 
 ```sh
-rustgis-cli plugins install nasa-opera-0.2.0.rgplugin
+rustgis-cli plugins install nasa-opera-0.2.1.rgplugin
 ```
 
 Its panel uses dropdowns, date pickers and a range slider, which come after RustGIS 0.6.0 (in
@@ -79,7 +79,7 @@ Every command takes its settings as parameters too, so scripts, the AI Assistant
 `rustgis-cli` can use it without the panel:
 
 ```sh
-rustgis-cli run --plugin nasa-opera-0.2.0.rgplugin \
+rustgis-cli run --plugin nasa-opera-0.2.1.rgplugin \
   --cmd 'plugin:nasa-opera/search={"product": "OPERA_L3_DSWX-HLS_V1", "bbox": [-119.95, 35.85, -119.45, 36.25], "start": "2023-04-01", "end": "2023-04-30", "limit": 50}' \
   --cmd 'plugin:nasa-opera/display={"date": "2023-04-30", "band": "B01_WTR", "waterOnly": true}' \
   --cmd 'map.zoomToExtent={"extent": [-120.2, 35.75, -119.2, 36.35]}' \

@@ -2,7 +2,7 @@
 # The crate's name doesn't matter to RustGIS (the plugin's id is in plugin.json), but
 # scripts/setup.py sets it to the plugin's id.
 name = "nasa-opera"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT"
 publish = false

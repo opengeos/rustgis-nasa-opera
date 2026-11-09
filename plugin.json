@@ -1,7 +1,7 @@
 {
   "id": "nasa-opera",
   "name": "NASA OPERA",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Search and visualize NASA OPERA products (surface water, land disturbance, SAR backscatter) on the map: granule footprints from NASA CMR, rasters from titiler-cmr, with no Earthdata login.",
   "author": "Qiusheng Wu",
   "homepage": "https://github.com/opengeos/rustgis-nasa-opera",
