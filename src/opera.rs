@@ -374,21 +374,29 @@ pub fn latest_versions(granules: Vec<Granule>) -> Vec<Granule> {
     out
 }
 
-/// The newest footprint record of each tile (by `datetime`), in the order of `records`. Records
+/// A key that orders ISO 8601 UTC times (`2023-04-01T18:54:23.425Z`) chronologically, whatever
+/// their fraction of a second: as strings, `…:23Z` sorts after `…:23.4Z`.
+pub fn time_key(datetime: &str) -> (String, String) {
+    let t = datetime.trim_end_matches('Z');
+    match t.split_once('.') {
+        Some((whole, fraction)) => (whole.to_string(), fraction.trim_end_matches('0').to_string()),
+        None => (t.to_string(), String::new()),
+    }
+}
+
+/// The newest footprint record of each tile (by `datetime`), where the tile first comes in `records`. Records
 /// without a tile are all kept. Display All shows these: older dates of a tile lie beneath the
 /// newest one, and every extra layer costs titiler-cmr requests on each pan and zoom.
 pub fn newest_per_tile(records: Vec<&Value>) -> Vec<&Value> {
     let tile = |r: &Value| r["tile"].as_str().unwrap_or_default().to_string();
-    let newest = |t: &str| records.iter().filter(|r| tile(r) == t).map(|r| r["datetime"].as_str().unwrap_or_default()).max();
-    let mut seen: Vec<String> = Vec::new();
-    let mut out = Vec::new();
-    for r in &records {
+    let key = |r: &Value| time_key(r["datetime"].as_str().unwrap_or_default());
+    let mut out: Vec<&Value> = Vec::new();
+    for r in records {
         let t = tile(r);
-        if t.is_empty() {
-            out.push(*r);
-        } else if !seen.contains(&t) && r["datetime"].as_str().unwrap_or_default() == newest(&t).unwrap_or_default() {
-            seen.push(t);
-            out.push(*r);
+        match out.iter_mut().find(|o| !t.is_empty() && tile(o) == t) {
+            Some(o) if key(r) > key(o) => *o = r,
+            Some(_) => {}
+            None => out.push(r),
         }
     }
     out
@@ -684,6 +692,17 @@ mod tests {
             r("y", "", "2023-04-03T00:00:00Z"),
         ];
         let kept: Vec<&str> = newest_per_tile(records.iter().collect()).iter().filter_map(|r| r["granule"].as_str()).collect();
-        assert_eq!(kept, ["a2", "x", "b2", "y"]);
+        assert_eq!(kept, ["a2", "b2", "x", "y"]);
+    }
+
+    #[test]
+    fn orders_times_with_and_without_fractions() {
+        assert!(time_key("2024-01-01T00:00:00.9Z") > time_key("2024-01-01T00:00:00Z"));
+        assert!(time_key("2024-01-01T00:00:01Z") > time_key("2024-01-01T00:00:00.999Z"));
+        assert_eq!(time_key("2024-01-01T00:00:00.500Z"), time_key("2024-01-01T00:00:00.5Z"));
+        let r = |ur: &str, dt: &str| json!({"granule": ur, "tile": "T11SKA", "datetime": dt});
+        let records = [r("whole", "2024-01-01T00:00:00Z"), r("later", "2024-01-01T00:00:00.9Z")];
+        let kept: Vec<&str> = newest_per_tile(records.iter().collect()).iter().filter_map(|r| r["granule"].as_str()).collect();
+        assert_eq!(kept, ["later"]);
     }
 }

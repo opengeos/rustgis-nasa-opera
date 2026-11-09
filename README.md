@@ -32,7 +32,7 @@ Results, Display, Display All and Clear.
   selected ones.
 - **Display** adds each granule as a tile layer (`OPERA DSWx-HLS B01_WTR 2023-04-30 T11SKA`),
   newest on top, at most 25 at a time. **Display All** shows the newest granule of each tile
-  found, at most 25 tiles: older dates of a tile would lie beneath it, and each layer slows
+  found that has the chosen layer, at most 25 tiles: older dates of a tile would lie beneath it, and each layer slows
   panning.
 - Categorical layers get their classes' colours: DSWx water classes (with *water classes only*
   to hide cloud, snow and ocean) and DIST disturbance status. Continuous layers get a stretch and
