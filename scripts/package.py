@@ -36,7 +36,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 TARGET = ROOT / "target" / "wasm32-unknown-unknown" / "release"
-BUILD_PY = "https://raw.githubusercontent.com/opengeos/rustgis-plugins/main/scripts/build.py"
+# The registry's checks, from rustgis-plugins' main branch, or the branch RUSTGIS_PLUGINS_REF names
+# (to check against registry changes that haven't landed yet).
+BUILD_PY = (
+    "https://raw.githubusercontent.com/opengeos/rustgis-plugins/"
+    + (os.environ.get("RUSTGIS_PLUGINS_REF") or "main")
+    + "/scripts/build.py"
+)
 # A fixed timestamp, so the same plugin.json and module make the same package (and SHA-256).
 ZIP_TIME = (2024, 1, 1, 0, 0, 0)
 
