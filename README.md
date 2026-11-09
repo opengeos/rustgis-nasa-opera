@@ -16,14 +16,20 @@ GeoTIFFs with Earthdata credentials of its own.
 
 ## What it does
 
-- Pick a **product**, the **months** to search (or *Latest*) and how many granules, then
-  **Search**. It searches the map view, or the selected features' area when *Search the selected
-  features' area* is ticked.
+The plugin has a ribbon tab of its own, **OPERA**, with the panel's button, Search, Zoom to
+Results, Display, Display All and Clear.
+
+- In the **NASA OPERA** panel, pick a **product** from the dropdown, a **start date** and an
+  **end date** (each a date box with a calendar), or drag the two handles of the **Months** range
+  to set them to whole months, then **Search**. With no dates it finds the latest granules. It
+  searches the map view, or the selected features' area when *Search the selected features' area*
+  is ticked.
 - The granules' **footprints** go on the map as the layer `OPERA footprints` (hollow orange
-  outlines), and the **Granules** tree lists them by date, newest first, with a search box.
-- Choose a **date** to take all its granules (a mosaic of the tiles acquired that day) or a single
-  granule. Its footprints are selected on the map and the **Layer** tree lists its bands.
-  Selecting footprints on the map works too: **Display** shows the selected ones.
+  outlines), and the **Granule** dropdown lists them by date, newest first: each date (all its
+  granules together, a mosaic of the tiles acquired that day), then its granules.
+- Choose a date or a granule: its footprints are selected on the map and the **Layer** dropdown
+  lists its datasets (bands). Selecting footprints on the map works too: **Display** shows the
+  selected ones.
 - **Display** adds each granule as a tile layer (`OPERA DSWx-HLS B01_WTR 2023-04-30 T11SKA`),
   newest on top, at most 25 at a time. **Display All** shows every granule found.
 - Categorical layers get their classes' colours: DSWx water classes (with *water classes only*
@@ -59,8 +65,9 @@ with **Plugins › Install From File** (or drop it on the RustGIS window), or on
 rustgis-cli plugins install nasa-opera-0.1.0.rgplugin
 ```
 
-It needs RustGIS 0.6.0 or later. The install prompt lists its permissions: **edit** (it adds the
-footprints and tile layers) and **network** (it reads `cmr.earthdata.nasa.gov` and adds tiles from
+It needs RustGIS 0.7.0 or later (its panel uses dropdowns, date pickers and a range slider;
+0.1.0 runs in 0.6.0). The install prompt lists its permissions: **edit** (it adds the footprints
+and tile layers) and **network** (it reads `cmr.earthdata.nasa.gov` and adds tiles from
 `titiler-cmr.opengeos.org`; it contacts no other host).
 
 ## Use it from scripts and the command line
@@ -78,7 +85,8 @@ rustgis-cli run --plugin nasa-opera-0.1.0.rgplugin \
 
 | Command | Parameters |
 |---|---|
-| `search` | `product`, `bbox` `[w, s, e, n]` (default: the map view), `start` and `end` `"YYYY-MM-DD"`, or `latest: true` (default: the panel's months, or the latest when it says *Latest*), `limit` 1–100 |
+| `search` | `product`, `bbox` `[w, s, e, n]` (default: the map view), `start` and `end` `"YYYY-MM-DD"`, or `latest: true` (default: the panel's dates, or the latest when both are empty), `limit` 1–100 |
+| `sync-dates` | `{"panel": {"months": [low, high]}}` sets the dates from the month range; `{"panel": {"start", "end"}}` moves the range to the dates' months |
 | `choose-granule` | `granule` (a granule UR) or `date` |
 | `display` | `granule` or `date` (default: the selected footprints, else the panel's choice), `band`, `rescale` `"min,max"`, `colormap` (a titiler colormap name), `waterOnly`, `opacity` 0–100 |
 | `display-all` | `band`, `rescale`, `colormap`, `waterOnly`, `opacity` |

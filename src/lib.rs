@@ -36,6 +36,7 @@ fn handle(req: Request) -> Result<Value, String> {
         "panel-state" => state(&req, None),
         "search" => search(&req),
         "choose-granule" => choose(&req),
+        "sync-dates" => sync_dates(&req),
         "display" => display(&req, false),
         "display-all" => display(&req, true),
         "zoom-results" => {
@@ -52,7 +53,7 @@ fn handle(req: Request) -> Result<Value, String> {
 
 rustgis_plugin::export!(handle);
 
-/// The chosen product: the `product` parameter, else the panel's tree, else DSWx-HLS.
+/// The chosen product: the `product` parameter, else the panel's dropdown, else DSWx-HLS.
 fn product(req: &Request) -> Result<&'static Product, String> {
     let name = req.str("product").or_else(|| req.panel_str("product"));
     match name {
@@ -156,7 +157,7 @@ fn search_area(req: &Request) -> Result<[f64; 4], String> {
     }
 }
 
-/// The time window: `start`/`end`, else the panel's months; `None` for the latest granules.
+/// The time window: `start`/`end`, else the panel's dates; `None` for the latest granules.
 fn search_dates(req: &Request) -> Result<Option<(String, String)>, String> {
     if req.bool("latest") == Some(true) {
         if req.str("start").is_some() || req.str("end").is_some() {
@@ -164,7 +165,9 @@ fn search_dates(req: &Request) -> Result<Option<(String, String)>, String> {
         }
         return Ok(None);
     }
-    match (req.str("start"), req.str("end")) {
+    let given = (req.str("start"), req.str("end"));
+    let (start, end) = if given == (None, None) { (req.panel_str("start"), req.panel_str("end")) } else { given };
+    match (start, end) {
         (Some(s), Some(e)) => {
             let (s, e) = (opera::parse_date(s)?, opera::parse_date(e)?);
             if s > e {
@@ -172,13 +175,38 @@ fn search_dates(req: &Request) -> Result<Option<(String, String)>, String> {
             }
             Ok(Some((opera::fmt_date(s), opera::fmt_date(e))))
         }
-        (Some(_), None) | (None, Some(_)) => Err("Give both start and end, as \"YYYY-MM-DD\".".into()),
-        (None, None) => {
-            let month = req.panel_i64("month").unwrap_or(0);
-            let span = req.panel_i64("span").unwrap_or(1).clamp(1, 12);
-            Ok(opera::month_window(month, span))
-        }
+        (Some(_), None) | (None, Some(_)) => Err("Pick both a start and an end date, or clear both for the latest granules.".into()),
+        (None, None) => Ok(None),
     }
+}
+
+/// Keeps the panel's two dates and its month range in step: moving the range sets the dates to
+/// its first and last days; picking a date moves the range to the dates' months.
+fn sync_dates(req: &Request) -> Result<Value, String> {
+    let mut panel = Panel::new();
+    let mut text = None;
+    if req.changed("months") {
+        let (lo, hi) = req.panel_range("months").unwrap_or((0, opera::MONTHS - 1));
+        let (s, e) = opera::range_window(lo, hi);
+        text = Some(format!("Search from {s} to {e}."));
+        panel = panel.value("start", s).value("end", e);
+    } else if let (Some(s), Some(e)) = (req.panel_str("start"), req.panel_str("end")) {
+        let (s, e) = (opera::parse_date(s)?, opera::parse_date(e)?);
+        if s > e {
+            panel = panel.text("status", "The start date comes after the end date.");
+        } else {
+            let (lo, hi) = (opera::month_index(s), opera::month_index(e));
+            panel = panel
+                .value("months", json!([lo, hi]))
+                .text("status", format!("Search from {} to {}.", opera::fmt_date(s), opera::fmt_date(e)));
+        }
+    } else if req.panel_str("start").is_none() && req.panel_str("end").is_none() {
+        text = Some("No dates: Search finds the latest granules.".to_string());
+    }
+    if let Some(t) = text {
+        panel = panel.text("status", t);
+    }
+    Ok(panel.answer(json!({})))
 }
 
 fn search(req: &Request) -> Result<Value, String> {
@@ -215,7 +243,7 @@ fn search(req: &Request) -> Result<Value, String> {
     if granules.is_empty() {
         let text = format!("No {} granules over this area, {when}.", p.label);
         host::notify(&text);
-        let panel = Panel::new().text("status", text).nodes("granule", []).nodes("band", []).value("granule", Value::Null);
+        let panel = Panel::new().text("status", text).options("granule", []).options("band", []).value("granule", Value::Null);
         return Ok(panel.answer(json!({"granules": 0, "hits": hits, "dates": []})));
     }
     let fc = rustgis_plugin::geojson::collection(granules.iter().map(|g| g.feature(p.short_name)).collect());
@@ -275,7 +303,7 @@ fn dates_of(records: &[Value]) -> Vec<String> {
     dates
 }
 
-/// The records a tree choice stands for: a granule, or every granule of a `date:` node.
+/// The records a choice stands for: a granule, or every granule of a `date:` option.
 fn chosen<'a>(choice: Option<&str>, records: &'a [Value]) -> Vec<&'a Value> {
     match choice {
         Some(c) => match c.strip_prefix("date:") {
@@ -301,17 +329,24 @@ fn select_chosen(choice: Option<&str>, records: &[Value]) -> Result<(), String> 
     Ok(())
 }
 
-/// The granules tree (dates, each with its granules) and the layer tree for `choice`.
-fn results_panel(req: &Request, records: &[Value], choice: Option<&str>) -> Panel {
-    let mut nodes: Vec<Node> = Vec::new();
+/// The granule dropdown's options: each date (all its granules together), then its granules.
+fn granule_options(records: &[Value]) -> Vec<Node> {
+    let mut options: Vec<Node> = Vec::new();
     for d in dates_of(records) {
         let of_day: Vec<&Value> = records.iter().filter(|r| r["date"] == d.as_str()).collect();
-        let children = of_day.iter().map(|r| {
+        let n = of_day.len();
+        options.push(Node::new(format!("date:{d}"), format!("{d} · all {n} granule{}", if n == 1 { "" } else { "s" })));
+        for r in of_day {
             let ur = r["granule"].as_str().unwrap_or_default();
-            Node::new(ur, format!("{} · {}", r["tile"].as_str().unwrap_or("?"), r["time"].as_str().unwrap_or("")))
-        });
-        nodes.push(Node::new(format!("date:{d}"), d.clone()).count(of_day.len() as u64).children(children));
+            options
+                .push(Node::new(ur, format!("      {d} · {} · {}", r["tile"].as_str().unwrap_or("?"), r["time"].as_str().unwrap_or(""))));
+        }
     }
+    options
+}
+
+/// The granule dropdown and the layer dropdown for `choice`.
+fn results_panel(req: &Request, records: &[Value], choice: Option<&str>) -> Panel {
     // With no choice (or a stale one), the bands of all the results: Display then uses the
     // footprints selected on the map, or says to choose.
     let mut picked = chosen(choice, records);
@@ -328,9 +363,9 @@ fn results_panel(req: &Request, records: &[Value], choice: Option<&str>) -> Pane
         .or_else(|| bands.first().cloned());
     let can_show = !bands.is_empty();
     Panel::new()
-        .nodes("granule", nodes)
+        .options("granule", granule_options(records))
         .value("granule", choice.map_or(Value::Null, Value::from))
-        .nodes("band", bands.iter().map(|b| Node::new(b.clone(), b.clone())))
+        .options("band", bands.iter().map(|b| Node::new(b.clone(), b.clone())))
         .value("band", band.map_or(Value::Null, Value::from))
         .enabled("display", can_show)
         .enabled("display-all", !records.is_empty())
@@ -372,22 +407,22 @@ fn bands_of(records: &[&Value]) -> Vec<String> {
     out
 }
 
-/// The panel's state: the product tree, the month slider and the results on the map.
+/// The panel's state: the product dropdown, the month range and the results on the map.
 fn state(req: &Request, status: Option<String>) -> Result<Value, String> {
     let p = product(req)?;
     let records = footprints(false)?;
     let choice = req.panel_str("granule").filter(|c| !chosen(Some(c), &records).is_empty()).map(str::to_string);
     let status = status.unwrap_or_else(|| {
         if records.is_empty() {
-            format!("{}: {}\nPick the months, then Search.", p.label, p.description)
+            format!("{}: {}\nPick the dates (or none for the latest), then Search.", p.label, p.description)
         } else {
             format!("{}: {} granules on the map.", p.label, records.len())
         }
     });
     let panel = results_panel(req, &records, choice.as_deref())
-        .nodes("product", PRODUCTS.iter().map(|p| Node::new(p.short_name, format!("{} · {}", p.label, p.description))))
+        .options("product", PRODUCTS.iter().map(|p| Node::new(p.short_name, format!("{} · {}", p.label, p.description))))
         .value("product", p.short_name)
-        .slider("month", 0, opera::MONTHS, &opera::month_labels())
+        .slider("months", 0, opera::MONTHS - 1, &opera::month_labels())
         .text("status", status);
     Ok(panel.answer(json!({"product": p.short_name, "granules": records.len()})))
 }
@@ -577,6 +612,28 @@ mod tests {
         assert!(is_footprints(&json!({"name": FOOTPRINTS, "fields": fields})));
         assert!(!is_footprints(&json!({"name": FOOTPRINTS, "fields": [{"name": "name"}]})), "a user's layer of that name");
         assert!(!is_footprints(&json!({"name": "Other", "fields": fields})));
+    }
+
+    #[test]
+    fn the_product_dropdown_lists_every_product() {
+        let m: Value = serde_json::from_str(include_str!("../plugin.json")).unwrap();
+        let declared: Vec<(String, String)> = m["panel"]["items"][0]["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| (o["id"].as_str().unwrap().to_string(), o["label"].as_str().unwrap().to_string()))
+            .collect();
+        let products: Vec<(String, String)> =
+            PRODUCTS.iter().map(|p| (p.short_name.to_string(), format!("{} · {}", p.label, p.description))).collect();
+        assert_eq!(declared, products);
+        assert_eq!(m["panel"]["items"][3]["max"], opera::MONTHS - 1, "the month range spans opera::MONTHS");
+    }
+
+    #[test]
+    fn granule_options_list_dates_then_granules() {
+        let rs = [rec("a", "2023-04-30", "B01_WTR"), rec("b", "2023-04-30", "B01_WTR"), rec("c", "2023-04-14", "B01_WTR")];
+        let ids: Vec<String> = granule_options(&rs).into_iter().map(|n| n.id).collect();
+        assert_eq!(ids, ["date:2023-04-30", "a", "b", "date:2023-04-14", "c"]);
     }
 
     #[test]
