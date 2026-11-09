@@ -158,6 +158,12 @@ fn search_area(req: &Request) -> Result<[f64; 4], String> {
 
 /// The time window: `start`/`end`, else the panel's months; `None` for the latest granules.
 fn search_dates(req: &Request) -> Result<Option<(String, String)>, String> {
+    if req.bool("latest") == Some(true) {
+        if req.str("start").is_some() || req.str("end").is_some() {
+            return Err("Give either latest or start and end, not both.".into());
+        }
+        return Ok(None);
+    }
     match (req.str("start"), req.str("end")) {
         (Some(s), Some(e)) => {
             let (s, e) = (opera::parse_date(s)?, opera::parse_date(e)?);
@@ -194,9 +200,9 @@ fn search(req: &Request) -> Result<Value, String> {
         return Ok(json!({"pending": true}));
     }
     let hits = pages.first().map_or(0, |p| p.hits);
-    let mut found: Vec<Granule> = pages.iter().flat_map(|p| &p.items).filter_map(Granule::from_umm).collect();
-    found.truncate(limit);
-    let granules = opera::latest_versions(found);
+    let found: Vec<Granule> = pages.iter().flat_map(|p| &p.items).filter_map(Granule::from_umm).collect();
+    let mut granules = opera::latest_versions(found);
+    granules.truncate(limit);
 
     // The old results go once the new ones are in, so a failed search keeps them.
     if has_footprints()? {
@@ -210,7 +216,7 @@ fn search(req: &Request) -> Result<Value, String> {
         let text = format!("No {} granules over this area, {when}.", p.label);
         host::notify(&text);
         let panel = Panel::new().text("status", text).nodes("granule", []).nodes("band", []).value("granule", Value::Null);
-        return Ok(panel.answer(json!({"granules": 0, "hits": hits})));
+        return Ok(panel.answer(json!({"granules": 0, "hits": hits, "dates": []})));
     }
     let fc = rustgis_plugin::geojson::collection(granules.iter().map(|g| g.feature(p.short_name)).collect());
     host::add_layer(FOOTPRINTS, fc)?;
@@ -237,12 +243,24 @@ fn footprints(selected: bool) -> Result<Vec<Value>, String> {
     }
     let fc = host::features(FOOTPRINTS, selected)?;
     let mut out: Vec<Value> = fc["features"].as_array().into_iter().flatten().map(|f| f["properties"].clone()).collect();
-    out.sort_by(|a, b| b["datetime"].as_str().cmp(&a["datetime"].as_str()));
+    newest_first(&mut out);
     Ok(out)
 }
 
+/// Sorts footprint records newest first, by acquisition time.
+fn newest_first(records: &mut [Value]) {
+    records.sort_by(|a, b| b["datetime"].as_str().cmp(&a["datetime"].as_str()));
+}
+
+/// Whether the map has the plugin's footprints layer: named `OPERA footprints` and with the
+/// fields the plugin writes, so a layer of the user's that happens to share the name is left alone.
 fn has_footprints() -> Result<bool, String> {
-    Ok(host::layers()?.as_array().into_iter().flatten().any(|l| l["name"] == FOOTPRINTS))
+    Ok(host::layers()?.as_array().into_iter().flatten().any(is_footprints))
+}
+
+fn is_footprints(layer: &Value) -> bool {
+    let fields: Vec<&str> = layer["fields"].as_array().into_iter().flatten().filter_map(|f| f["name"].as_str()).collect();
+    layer["name"] == FOOTPRINTS && ["granule", "product", "concept_id", "bands"].iter().all(|f| fields.contains(f))
 }
 
 /// The distinct dates of `records`, newest first.
@@ -294,7 +312,12 @@ fn results_panel(req: &Request, records: &[Value], choice: Option<&str>) -> Pane
         });
         nodes.push(Node::new(format!("date:{d}"), d.clone()).count(of_day.len() as u64).children(children));
     }
-    let picked = chosen(choice, records);
+    // With no choice (or a stale one), the bands of all the results: Display then uses the
+    // footprints selected on the map, or says to choose.
+    let mut picked = chosen(choice, records);
+    if picked.is_empty() {
+        picked = records.iter().collect();
+    }
     let bands = bands_of(&picked);
     let product = picked.first().and_then(|r| r["product"].as_str()).and_then(opera::product);
     let band = req
@@ -312,6 +335,28 @@ fn results_panel(req: &Request, records: &[Value], choice: Option<&str>) -> Pane
         .enabled("display", can_show)
         .enabled("display-all", !records.is_empty())
         .enabled("zoom-results", !records.is_empty())
+}
+
+/// The band to show: an explicit `band` must be one of `bands`; the panel's falls back to the
+/// product's default band, then the first.
+fn pick_band(explicit: Option<&str>, panel: Option<&str>, bands: &[String], product: &opera::Product) -> Result<String, String> {
+    if let Some(b) = explicit.filter(|b| !b.trim().is_empty()) {
+        return if bands.iter().any(|x| x == b) {
+            Ok(b.to_string())
+        } else {
+            Err(format!("The chosen granules have no layer {b}: they have {}.", bands.join(", ")))
+        };
+    }
+    panel
+        .filter(|b| bands.iter().any(|x| x == b))
+        .map(str::to_string)
+        .or_else(|| product.default_band(bands))
+        .or_else(|| bands.first().cloned())
+        .ok_or_else(|| format!("{} granules have no GeoTIFF layers to show (they are HDF5 or NetCDF).", product.label))
+}
+
+fn has_band(record: &Value, band: &str) -> bool {
+    record["bands"].as_str().unwrap_or_default().split(',').any(|b| b == band)
 }
 
 /// The layers (band tokens) the records have, in their order, each once.
@@ -394,20 +439,18 @@ fn display(req: &Request, all: bool) -> Result<Value, String> {
     let selected = footprints(true)?;
     let mut picked = to_display(req, &records, &selected, all);
     if picked.is_empty() {
-        return Err("Choose a granule or a date, or select footprints on the map.".into());
+        return Err(match (all, req.str("granule"), req.str("date")) {
+            (false, Some(g), _) => format!("The search results have no granule {g}."),
+            (false, None, Some(d)) => format!("The search results have no granule of {d}: they have {}.", dates_of(&records).join(", ")),
+            _ => "Choose a granule or a date, or select footprints on the map.".into(),
+        });
     }
+    let product = picked[0]["product"].as_str().and_then(opera::product).ok_or("The footprints name no OPERA product")?;
+    let band = pick_band(req.str("band"), req.panel_str("band"), &bands_of(&picked), product)?;
+    // Only the granules that have the band count toward the cap.
+    picked.retain(|r| has_band(r, &band));
     let skipped = picked.len().saturating_sub(MAX_DISPLAY);
     picked.truncate(MAX_DISPLAY);
-    let bands = bands_of(&picked);
-    let product = picked[0]["product"].as_str().and_then(opera::product).ok_or("The footprints name no OPERA product")?;
-    let band = req
-        .str("band")
-        .or_else(|| req.panel_str("band"))
-        .filter(|b| bands.iter().any(|x| x == b))
-        .map(str::to_string)
-        .or_else(|| product.default_band(&bands))
-        .or_else(|| bands.first().cloned())
-        .ok_or_else(|| format!("{} granules have no GeoTIFF layers to show (they are HDF5 or NetCDF).", product.label))?;
     let water_only = req.bool("waterOnly").or_else(|| req.panel_bool("water-only")).unwrap_or(false);
     let style = opera::Style::for_band(product, &band, water_only, req.str("rescale"), req.str("colormap"));
     let opacity = req.f64("opacity").or_else(|| req.panel_i64("opacity").map(|o| o as f64)).unwrap_or(100.0).clamp(0.0, 100.0) / 100.0;
@@ -417,9 +460,6 @@ fn display(req: &Request, all: bool) -> Result<Value, String> {
     // Oldest first, so the newest granule ends on top.
     for r in picked.iter().rev() {
         let ur = r["granule"].as_str().unwrap_or_default();
-        if !r["bands"].as_str().unwrap_or_default().split(',').any(|b| b == band) {
-            continue;
-        }
         let concept = r["concept_id"].as_str().unwrap_or_default();
         let id = format!("{TILE_ID}{:016x}", opera::fnv1a(&format!("{ur}/{band}")));
         if on_map.contains(&id) {
@@ -502,6 +542,41 @@ mod tests {
         assert!(chosen(Some("date:2020-01-01"), &rs).is_empty());
         assert!(chosen(None, &rs).is_empty());
         assert_eq!(dates_of(&rs), ["2023-04-01", "2023-04-03"]);
+    }
+
+    #[test]
+    fn sorts_newest_first() {
+        let mut rs = vec![
+            json!({"datetime": "2023-04-01T18:00:00Z"}),
+            json!({"datetime": "2023-04-30T18:00:00Z"}),
+            json!({"datetime": "2023-04-14T19:00:00Z"}),
+        ];
+        newest_first(&mut rs);
+        let order: Vec<&str> = rs.iter().map(|r| r["datetime"].as_str().unwrap()).collect();
+        assert_eq!(order, ["2023-04-30T18:00:00Z", "2023-04-14T19:00:00Z", "2023-04-01T18:00:00Z"]);
+    }
+
+    #[test]
+    fn picks_a_band() {
+        let rtc = opera::product("OPERA_L2_RTC-S1_V1").unwrap();
+        let hh: Vec<String> = vec!["HH".into(), "HV".into()];
+        assert_eq!(pick_band(None, None, &hh, rtc).unwrap(), "HH");
+        assert_eq!(pick_band(None, Some("VV"), &hh, rtc).unwrap(), "HH", "a panel band the granules lack falls back");
+        assert_eq!(pick_band(Some("HV"), None, &hh, rtc).unwrap(), "HV");
+        assert!(pick_band(Some("VV"), None, &hh, rtc).is_err(), "an explicit band they lack is refused");
+        assert_eq!(pick_band(Some(""), None, &hh, rtc).unwrap(), "HH");
+        let cslc = opera::product("OPERA_L2_CSLC-S1_V1").unwrap();
+        assert!(pick_band(None, None, &[], cslc).is_err());
+        assert!(has_band(&json!({"bands": "B01_WTR,B02_BWTR"}), "B02_BWTR"));
+        assert!(!has_band(&json!({"bands": "B01_WTR"}), "B01"));
+    }
+
+    #[test]
+    fn knows_its_footprints_layer() {
+        let fields = json!([{"name": "granule"}, {"name": "product"}, {"name": "concept_id"}, {"name": "bands"}, {"name": "date"}]);
+        assert!(is_footprints(&json!({"name": FOOTPRINTS, "fields": fields})));
+        assert!(!is_footprints(&json!({"name": FOOTPRINTS, "fields": [{"name": "name"}]})), "a user's layer of that name");
+        assert!(!is_footprints(&json!({"name": "Other", "fields": fields})));
     }
 
     #[test]

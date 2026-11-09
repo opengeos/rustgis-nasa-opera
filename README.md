@@ -78,7 +78,7 @@ rustgis-cli run --plugin nasa-opera-0.1.0.rgplugin \
 
 | Command | Parameters |
 |---|---|
-| `search` | `product`, `bbox` `[w, s, e, n]` (default: the map view), `start` and `end` `"YYYY-MM-DD"` (default: the panel's months, or the latest), `limit` 1–100 |
+| `search` | `product`, `bbox` `[w, s, e, n]` (default: the map view), `start` and `end` `"YYYY-MM-DD"`, or `latest: true` (default: the panel's months, or the latest when it says *Latest*), `limit` 1–100 |
 | `choose-granule` | `granule` (a granule UR) or `date` |
 | `display` | `granule` or `date` (default: the selected footprints, else the panel's choice), `band`, `rescale` `"min,max"`, `colormap` (a titiler colormap name), `waterOnly`, `opacity` 0–100 |
 | `display-all` | `band`, `rescale`, `colormap`, `waterOnly`, `opacity` |

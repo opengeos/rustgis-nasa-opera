@@ -26,7 +26,7 @@
       "label": "Search",
       "help": "Search NASA CMR for granules of the chosen product over the map view (or the selected features) and the chosen months, and draw their footprints.",
       "icon": "search",
-      "params": "{\"product\"?: CMR short name (OPERA_L3_DSWX-HLS_V1…), \"bbox\"?: [west, south, east, north] (default: the map view), \"start\"?: \"YYYY-MM-DD\", \"end\"?: \"YYYY-MM-DD\" (default: the panel's months, or the latest granules), \"limit\"?: 1..100}"
+      "params": "{\"product\"?: CMR short name (OPERA_L3_DSWX-HLS_V1…), \"bbox\"?: [west, south, east, north] (default: the map view), \"start\"?: \"YYYY-MM-DD\", \"end\"?: \"YYYY-MM-DD\" | \"latest\"?: true (default: the panel's months), \"limit\"?: 1..100}"
     },
     {
       "id": "choose-granule",

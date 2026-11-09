@@ -27,8 +27,10 @@ DSWx `B01_WTR` classes: 1 open water (blue), 2 partial surface water (light blue
    Keep the box small (a city or a basin, under about 2 degrees across).
 2. Search:
    `plugin:nasa-opera/search` with `{"product": "OPERA_L3_DSWX-S1_V1", "bbox": [w, s, e, n],
-   "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}`. It draws the footprints (`OPERA footprints`) and
-   answers `granules`, `hits` and `dates` (newest first). Without dates it finds the latest.
+   "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}`, or `"latest": true` instead of the dates for the
+   newest granules. Always give one or the other: without them it searches the months set in the
+   plugin's panel. It draws the footprints (`OPERA footprints`) and answers `granules`, `hits` and
+   `dates` (newest first).
 3. Show one date's granules together:
    `plugin:nasa-opera/display` with `{"date": "YYYY-MM-DD", "band": "B01_WTR", "waterOnly": true}`.
    Each granule becomes a tile layer named `OPERA <product> <band> <date> <tile>`.

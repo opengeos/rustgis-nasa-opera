@@ -181,8 +181,8 @@ pub struct Granule {
     pub time: String,
     /// The tile or burst id (T11SKA, T064-135524-IW2…).
     pub tile: String,
-    /// Its outline, a closed ring of [lon, lat].
-    pub ring: Vec<[f64; 2]>,
+    /// Its outline: one closed ring of [lon, lat] per part (most granules have one).
+    pub rings: Vec<Vec<[f64; 2]>>,
     /// The layer tokens of its GeoTIFFs (B01_WTR, VV…).
     pub bands: Vec<String>,
 }
@@ -313,7 +313,7 @@ impl Granule {
             .unwrap_or_default();
         let date = datetime.get(..10).unwrap_or("").to_string();
         let time = datetime.get(11..16).unwrap_or("").to_string();
-        let ring = ring_of(&umm.spatial_extent.horizontal_spatial_domain.geometry)?;
+        let rings = rings_of(&umm.spatial_extent.horizontal_spatial_domain.geometry)?;
         let tile = ur.split('_').nth(3).unwrap_or("").to_string();
         let mut bands: Vec<String> = Vec::new();
         for url in umm.related_urls.iter().filter_map(|u| u.url.as_deref()) {
@@ -326,13 +326,13 @@ impl Granule {
                 bands.push(b);
             }
         }
-        Some(Granule { ur, concept_id, datetime, date, time, tile, ring, bands })
+        Some(Granule { ur, concept_id, datetime, date, time, tile, rings, bands })
     }
 
     /// `[west, south, east, north]` of the outline.
     pub fn bounds(&self) -> [f64; 4] {
         let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-        for [x, y] in &self.ring {
+        for [x, y] in self.rings.iter().flatten() {
             b = [b[0].min(*x), b[1].min(*y), b[2].max(*x), b[3].max(*y)];
         }
         b
@@ -350,7 +350,11 @@ impl Granule {
 
     /// The footprint as a GeoJSON feature.
     pub fn feature(&self, product: &str) -> Value {
-        json!({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [self.ring]}, "properties": self.record(product)})
+        let geometry = match &self.rings[..] {
+            [ring] => json!({"type": "Polygon", "coordinates": [ring]}),
+            rings => json!({"type": "MultiPolygon", "coordinates": rings.iter().map(|r| vec![r]).collect::<Vec<_>>()}),
+        };
+        json!({"type": "Feature", "geometry": geometry, "properties": self.record(product)})
     }
 }
 
@@ -374,21 +378,27 @@ pub fn fnv1a(s: &str) -> u64 {
     s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3))
 }
 
-/// A closed outline from a UMM-G geometry: its first polygon, else its first bounding rectangle.
-fn ring_of(geo: &Geometry) -> Option<Vec<[f64; 2]>> {
-    if let Some(poly) = geo.gpolygons.first() {
+/// The closed outlines of a UMM-G geometry: every polygon (a granule across the antimeridian
+/// has two), else every bounding rectangle. `None` when it has neither.
+fn rings_of(geo: &Geometry) -> Option<Vec<Vec<[f64; 2]>>> {
+    let mut rings: Vec<Vec<[f64; 2]>> = Vec::new();
+    for poly in &geo.gpolygons {
         let mut ring: Vec<[f64; 2]> = poly.boundary.points.iter().map(|p| [p.longitude, p.latitude]).collect();
         if ring.len() >= 3 {
             if ring.first() != ring.last() {
                 ring.push(ring[0]);
             }
-            return Some(ring);
+            rings.push(ring);
         }
     }
-    let r = geo.bounding_rectangles.first()?;
-    let (w, s) = (r.west_bounding_coordinate, r.south_bounding_coordinate);
-    let (e, n) = (r.east_bounding_coordinate, r.north_bounding_coordinate);
-    Some(vec![[w, s], [e, s], [e, n], [w, n], [w, s]])
+    if rings.is_empty() {
+        for r in &geo.bounding_rectangles {
+            let (w, s) = (r.west_bounding_coordinate, r.south_bounding_coordinate);
+            let (e, n) = (r.east_bounding_coordinate, r.north_bounding_coordinate);
+            rings.push(vec![[w, s], [e, s], [e, n], [w, n], [w, s]]);
+        }
+    }
+    (!rings.is_empty()).then_some(rings)
 }
 
 /// The layer token of a GeoTIFF link: what follows `<granule UR>_` in its file name
@@ -448,12 +458,14 @@ impl Style {
         } else {
             Style::default()
         };
+        let rescale = rescale.filter(|r| !r.trim().is_empty());
+        let colormap = colormap.filter(|c| !c.trim().is_empty());
         if rescale.is_some() || colormap.is_some() {
             s.colormap = None;
-            if let Some(r) = rescale.filter(|r| !r.trim().is_empty()) {
+            if let Some(r) = rescale {
                 s.rescale = Some(r.trim().to_string());
             }
-            if let Some(c) = colormap.filter(|c| !c.trim().is_empty()) {
+            if let Some(c) = colormap {
                 s.colormap_name = Some(c.trim().to_ascii_lowercase());
             }
         }
@@ -538,7 +550,8 @@ mod tests {
         assert_eq!(g.time, "13:44");
         assert_eq!(g.tile, "T064-135524-IW2");
         assert_eq!(g.bands, ["VV", "VH"]);
-        assert_eq!(g.ring.len(), 4, "the ring is closed");
+        assert_eq!(g.rings, [vec![[1.0, 2.0], [3.0, 2.0], [3.0, 4.0], [1.0, 2.0]]], "the ring is closed");
+        assert_eq!(g.feature("P")["geometry"]["type"], "Polygon");
         assert_eq!(g.bounds(), [1.0, 2.0, 3.0, 4.0]);
         let static_item = json!({
             "meta": {"collection-concept-id": "C1"},
@@ -548,7 +561,18 @@ mod tests {
                 ]}}}}
         });
         let s = Granule::from_umm(&serde_json::from_value(static_item).unwrap()).unwrap();
-        assert_eq!((s.date.as_str(), s.ring.len(), s.bands.len()), ("2014-04-03", 5, 0));
+        assert_eq!((s.date.as_str(), s.rings[0].len(), s.bands.len()), ("2014-04-03", 5, 0));
+        let two = json!({
+            "meta": {"collection-concept-id": "C1"},
+            "umm": {"GranuleUR": "A_B_C_T1", "SpatialExtent": {"HorizontalSpatialDomain": {"Geometry": {"GPolygons": [
+                {"Boundary": {"Points": [{"Longitude": 179.0, "Latitude": 0.0}, {"Longitude": 180.0, "Latitude": 0.0}, {"Longitude": 180.0, "Latitude": 1.0}]}},
+                {"Boundary": {"Points": [{"Longitude": -180.0, "Latitude": 0.0}, {"Longitude": -179.0, "Latitude": 0.0}, {"Longitude": -180.0, "Latitude": 1.0}]}}
+            ]}}}}
+        });
+        let t = Granule::from_umm(&serde_json::from_value(two).unwrap()).unwrap();
+        assert_eq!(t.rings.len(), 2, "both parts are kept");
+        assert_eq!(t.feature("P")["geometry"]["type"], "MultiPolygon");
+        assert_eq!(t.bounds(), [-180.0, 0.0, 180.0, 1.0]);
     }
 
     #[test]
@@ -560,7 +584,7 @@ mod tests {
             date: String::new(),
             time: String::new(),
             tile: tile.into(),
-            ring: Vec::new(),
+            rings: Vec::new(),
             bands: Vec::new(),
         };
         let out = latest_versions(vec![
@@ -613,6 +637,11 @@ mod tests {
         let hls = product("OPERA_L3_DSWX-HLS_V1").unwrap();
         assert_eq!(Style::for_band(hls, "B01_WTR", true, None, None).colormap.as_deref(), Some(DSWX_WATER_ONLY));
         assert_eq!(Style::for_band(hls, "B10_DEM", false, None, None), named("0,3000", "terrain"));
+        assert_eq!(
+            Style::for_band(hls, "B01_WTR", false, Some(" "), Some("")).colormap.as_deref(),
+            Some(DSWX_CLASSES),
+            "blank overrides keep the classes"
+        );
         let custom = Style::for_band(hls, "B01_WTR", false, Some("0,2"), Some("Blues"));
         assert_eq!(custom, named("0,2", "blues"));
         let rtc = product("OPERA_L2_RTC-S1_V1").unwrap();
